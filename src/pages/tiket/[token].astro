@@ -1,0 +1,84 @@
+---
+export const prerender = false;
+
+import PublicLayout from '../../layouts/PublicLayout.astro';
+import { createServiceClient } from '../../lib/supabase';
+import { TicketCard } from '../../components/ticket/TicketCard';
+
+const { token } = Astro.params;
+if (!token) return Astro.redirect('/');
+
+const supabase = createServiceClient();
+
+// Fetch registration
+const { data: reg, error: regError } = await supabase
+  .from('registrations')
+  .select(`
+    id,
+    reg_code,
+    ticket_token,
+    husband_name,
+    wife_name,
+    whatsapp,
+    payment_status,
+    checkin_at,
+    events (
+      id,
+      title,
+      slug,
+      date_start,
+      date_end,
+      location,
+      location_map_url,
+      price_per_couple,
+      flyer_url
+    )
+  `)
+  .eq('ticket_token', token)
+  .is('deleted_at', null)
+  .single();
+
+if (regError || !reg) {
+  return Astro.redirect('/');
+}
+
+// Get primary confirmator WA
+const { data: confData } = await supabase
+  .from('event_confirmators')
+  .select('admins (whatsapp)')
+  .eq('event_id', (reg.events as any)?.id)
+  .eq('is_primary', true)
+  .single();
+
+const confirmatorWa = (confData?.admins as any)?.whatsapp || '628123456789';
+
+const ticketData = {
+  ...reg,
+  confirmator_wa: confirmatorWa,
+} as any;
+---
+
+<PublicLayout
+  title={`E-Tiket: ${reg.reg_code} — Happy Couple Class`}
+  description={`E-Tiket resmi Happy Couple Class untuk ${reg.husband_name} & ${reg.wife_name}.`}
+  noindex={true}
+>
+  <div class="ticket-page">
+    <div class="ticket-container">
+      <TicketCard client:load ticket={ticketData} />
+    </div>
+  </div>
+</PublicLayout>
+
+<style>
+  .ticket-page {
+    background-color: var(--pink-50);
+    min-height: calc(100vh - 160px);
+    padding: 40px 16px 80px 16px;
+  }
+
+  .ticket-container {
+    max-width: 500px;
+    margin: 0 auto;
+  }
+</style>

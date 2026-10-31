@@ -1,0 +1,1070 @@
+---
+export const prerender = false;
+
+import { requireAdmin } from '../../../../lib/auth';
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { createServiceClient } from '../../../../lib/supabase';
+import { slugify } from '../../../../lib/format';
+
+const authResult = await requireAdmin(Astro);
+if (authResult instanceof Response) return authResult;
+
+const { admin } = authResult;
+const { id: eventId } = Astro.params;
+
+if (!eventId) return Astro.redirect('/admin/events');
+
+const supabase = createServiceClient();
+let successMessage = '';
+let errorMessage = '';
+let generatedStaffPassword = '';
+
+// Handle POST submissions
+if (Astro.request.method === 'POST') {
+  try {
+    const formData = await Astro.request.formData();
+    const action = formData.get('_action') as string;
+
+    if (action === 'update_event') {
+      const title = (formData.get('title') as string)?.trim();
+      let slug = (formData.get('slug') as string)?.trim() || slugify(title);
+      const categoryId = (formData.get('category_id') as string) || null;
+      const status = formData.get('status') as 'draft' | 'open' | 'closed' | 'done';
+      const dateStart = formData.get('date_start') as string;
+      const dateEnd = (formData.get('date_end') as string) || null;
+      const location = (formData.get('location') as string)?.trim();
+      const locationMapUrl = (formData.get('location_map_url') as string)?.trim() || null;
+      const pricePerCouple = parseFloat(formData.get('price_per_couple') as string) || 0;
+      const quotaStr = formData.get('quota') as string;
+      const quota = quotaStr ? parseInt(quotaStr) : null;
+      const paymentDeadlineHours = parseInt(formData.get('payment_deadline_hours') as string) || 24;
+      const waitlistEnabled = formData.get('waitlist_enabled') === 'on';
+      const allowDuplicateWa = formData.get('allow_duplicate_wa') === 'on';
+      const showOnLanding = formData.get('show_on_landing') === 'on';
+      const flyerUrl = (formData.get('flyer_url') as string)?.trim() || null;
+      const description = (formData.get('description') as string)?.trim() || null;
+      const successMessageCustom = (formData.get('success_message') as string)?.trim() || null;
+      const waToAdminTemplate = (formData.get('wa_to_admin_template') as string)?.trim() || null;
+      const waToUserTemplate = (formData.get('wa_to_user_template') as string)?.trim() || null;
+
+      const paymentAccountIds = formData.getAll('payment_accounts') as string[];
+      const confirmatorIds = formData.getAll('confirmators') as string[];
+      const primaryConfirmatorId = formData.get('primary_confirmator') as string;
+
+      if (!title) throw new Error('Judul event wajib diisi.');
+      if (!dateStart) throw new Error('Tanggal mulai wajib diisi.');
+      if (!location) throw new Error('Lokasi pelaksanaan wajib diisi.');
+
+      // Update event row
+      const { error: updateError } = await supabase
+        .from('events')
+        .update({
+          title,
+          slug,
+          category_id: categoryId,
+          status,
+          date_start: new Date(dateStart).toISOString(),
+          date_end: dateEnd ? new Date(dateEnd).toISOString() : null,
+          location,
+          location_map_url: locationMapUrl,
+          price_per_couple: pricePerCouple,
+          quota,
+          payment_deadline_hours: paymentDeadlineHours,
+          waitlist_enabled: waitlistEnabled,
+          allow_duplicate_wa: allowDuplicateWa,
+          show_on_landing: showOnLanding,
+          flyer_url: flyerUrl,
+          description,
+          success_message: successMessageCustom,
+          wa_to_admin_template: waToAdminTemplate,
+          wa_to_user_template: waToUserTemplate,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', eventId);
+
+      if (updateError) {
+        if (updateError.code === '23505') throw new Error('Slug URL sudah digunakan event lain.');
+        throw updateError;
+      }
+
+      // Update payment accounts
+      await supabase.from('event_payment_accounts').delete().eq('event_id', eventId);
+      if (paymentAccountIds.length > 0) {
+        await supabase.from('event_payment_accounts').insert(
+          paymentAccountIds.map((accId) => ({ event_id: eventId, payment_account_id: accId }))
+        );
+      }
+
+      // Update confirmators
+      await supabase.from('event_confirmators').delete().eq('event_id', eventId);
+      if (confirmatorIds.length > 0) {
+        await supabase.from('event_confirmators').insert(
+          confirmatorIds.map((admId) => ({
+            event_id: eventId,
+            admin_id: admId,
+            is_primary: admId === primaryConfirmatorId || confirmatorIds.length === 1,
+          }))
+        );
+      }
+
+      successMessage = 'Perubahan data kelas berhasil disimpan.';
+    } else if (action === 'reset_staff_password') {
+      // Generate 8-character random password
+      const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz';
+      let randomPass = '';
+      for (let i = 0; i < 8; i++) {
+        randomPass += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+
+      // Call database function set_event_staff_password
+      const { error: rpcError } = await supabase.rpc('set_event_staff_password', {
+        p_event_id: eventId,
+        p_password: randomPass,
+      });
+
+      if (rpcError) throw rpcError;
+      generatedStaffPassword = randomPass;
+      successMessage = 'Password akun scanner pendata berhasil dibuat/direset.';
+    } else if (action === 'toggle_staff_active') {
+      const currentActive = formData.get('current_staff_active') === 'true';
+      const { error } = await supabase
+        .from('event_staff')
+        .update({ is_active: !currentActive, updated_at: new Date().toISOString() })
+        .eq('event_id', eventId);
+      if (error) throw error;
+      successMessage = 'Status akun scanner pendata diperbarui.';
+    } else if (action === 'delete_event') {
+      const { error } = await supabase
+        .from('events')
+        .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', eventId);
+      if (error) throw error;
+      return Astro.redirect('/admin/events?msg=deleted');
+    }
+  } catch (err: any) {
+    errorMessage = err.message || 'Gagal menyimpan perubahan.';
+  }
+}
+
+// Fetch event details
+const { data: event, error: fetchError } = await supabase
+  .from('events')
+  .select(`
+    *,
+    categories (id, name),
+    event_payment_accounts (payment_account_id),
+    event_confirmators (admin_id, is_primary)
+  `)
+  .eq('id', eventId)
+  .is('deleted_at', null)
+  .single();
+
+if (fetchError || !event) return Astro.redirect('/admin/events');
+
+// Fetch event staff status
+const { data: staffData } = await supabase
+  .from('event_staff')
+  .select('id, is_active, failed_attempts, locked_until')
+  .eq('event_id', eventId)
+  .single();
+
+// Fetch categories
+const { data: categories } = await supabase
+  .from('categories')
+  .select('id, name')
+  .order('sort_order', { ascending: true });
+
+// Fetch active payment accounts
+const { data: paymentAccounts } = await supabase
+  .from('payment_accounts')
+  .select('id, bank_name, account_number, account_name')
+  .eq('is_active', true)
+  .order('bank_name', { ascending: true });
+
+// Fetch active admins
+const { data: adminsList } = await supabase
+  .from('admins')
+  .select('id, name, whatsapp')
+  .eq('is_active', true)
+  .order('name', { ascending: true });
+
+const selectedPaymentAccounts = (event.event_payment_accounts || []).map((p: any) => p.payment_account_id);
+const selectedConfirmators = (event.event_confirmators || []).map((c: any) => c.admin_id);
+const primaryConfirmator = (event.event_confirmators || []).find((c: any) => c.is_primary)?.admin_id;
+
+// Format date for datetime-local input
+const toDateTimeLocal = (isoStr?: string | null) => {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+---
+
+<AdminLayout title={`Edit: ${event.title}`} adminName={admin.name} adminRole={admin.role}>
+  <div class="edit-page-container">
+    <div class="page-header">
+      <div>
+        <div class="breadcrumb">
+          <a href="/admin/events">Event</a>
+          <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+          <span>Edit Pengaturan Kelas</span>
+        </div>
+        <h2 class="page-title">{event.title}</h2>
+        <p class="page-desc">ID Kelas: <code>{event.id}</code></p>
+      </div>
+      <div class="header-actions">
+        <a href={`/daftar/${event.slug}`} target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm btn-public-header" title="Buka Halaman Pendaftaran Publik">
+          <span class="material-symbols-outlined" aria-hidden="true">public</span>
+          Halaman Publik
+          <span class="material-symbols-outlined icon-14" aria-hidden="true">open_in_new</span>
+        </a>
+        <a href={`/admin/events/${event.id}/form`} class="btn btn-secondary btn-sm">
+          <span class="material-symbols-outlined" aria-hidden="true">tune</span>
+          Form Builder
+        </a>
+        <a href={`/admin/events/${event.id}/peserta`} class="btn btn-secondary btn-sm">
+          <span class="material-symbols-outlined" aria-hidden="true">group</span>
+          Data Peserta
+        </a>
+      </div>
+    </div>
+
+    {successMessage && (
+      <div class="alert alert-success" role="alert">
+        <span class="material-symbols-outlined" aria-hidden="true">check_circle</span>
+        <span>{successMessage}</span>
+      </div>
+    )}
+
+    {errorMessage && (
+      <div class="alert alert-danger" role="alert">
+        <span class="material-symbols-outlined" aria-hidden="true">error</span>
+        <span>{errorMessage}</span>
+      </div>
+    )}
+
+    {generatedStaffPassword && (
+      <div class="staff-password-banner" role="alert">
+        <div class="staff-pass-content">
+          <span class="material-symbols-outlined staff-pass-icon" aria-hidden="true">key</span>
+          <div>
+            <strong>Password Akun Scanner Berhasil Dibuat:</strong>
+            <p class="staff-pass-desc">Catat password ini sekarang. Password ini tidak akan ditampilkan lagi demi keamanan.</p>
+            <div class="staff-pass-row">
+              <span class="staff-pass-code" id="staff-pass-display">{generatedStaffPassword}</span>
+              <button
+                type="button"
+                id="btn-copy-pass"
+                class="btn btn-primary btn-sm"
+                data-pass={generatedStaffPassword}
+              >
+                <span class="material-symbols-outlined" aria-hidden="true">content_copy</span>
+                Salin Password
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+
+    <form method="POST" class="event-form">
+      <input type="hidden" name="_action" value="update_event" />
+
+      <!-- Section: Informasi Utama -->
+      <div class="form-card">
+        <h3 class="form-section-title">
+          <span class="material-symbols-outlined" aria-hidden="true">tune</span>
+          Status &amp; Informasi Dasar
+        </h3>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="status" class="form-label">Status Pendaftaran Event</label>
+            <select id="status" name="status" class="form-select">
+              <option value="draft" selected={event.status === 'draft'}>Draft (Disembunyikan)</option>
+              <option value="open" selected={event.status === 'open'}>Buka (Menerima Pendaftaran)</option>
+              <option value="closed" selected={event.status === 'closed'}>Tutup (Pendaftaran Ditutup)</option>
+              <option value="done" selected={event.status === 'done'}>Selesai (Event Sudah Berlangsung)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="category_id" class="form-label">Kategori</label>
+            <select id="category_id" name="category_id" class="form-select">
+              <option value="">-- Tanpa Kategori --</option>
+              {categories?.map((cat) => (
+                <option value={cat.id} selected={event.category_id === cat.id}>{cat.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div class="form-group col-span-2">
+            <label for="title" class="form-label">Judul Event <span class="required">*</span></label>
+            <input
+              type="text"
+              id="title"
+              name="title"
+              class="form-input"
+              value={event.title}
+              required
+            />
+          </div>
+
+          <div class="form-group col-span-2">
+            <label for="slug" class="form-label">Slug URL <span class="required">*</span></label>
+            <input
+              type="text"
+              id="slug"
+              name="slug"
+              class="form-input"
+              value={event.slug}
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="price_per_couple" class="form-label">Harga Pendaftaran (per Couple) <span class="required">*</span></label>
+            <input
+              type="number"
+              id="price_per_couple"
+              name="price_per_couple"
+              class="form-input"
+              value={event.price_per_couple}
+              min="0"
+              step="1000"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="quota" class="form-label">Kuota Peserta (Couple)</label>
+            <input
+              type="number"
+              id="quota"
+              name="quota"
+              class="form-input"
+              value={event.quota || ''}
+              placeholder="Kosongkan jika tidak dibatasi"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="date_start" class="form-label">Tanggal Mulai <span class="required">*</span></label>
+            <input
+              type="datetime-local"
+              id="date_start"
+              name="date_start"
+              class="form-input"
+              value={toDateTimeLocal(event.date_start)}
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="date_end" class="form-label">Tanggal Selesai</label>
+            <input
+              type="datetime-local"
+              id="date_end"
+              name="date_end"
+              class="form-input"
+              value={toDateTimeLocal(event.date_end)}
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="location" class="form-label">Lokasi <span class="required">*</span></label>
+            <input
+              type="text"
+              id="location"
+              name="location"
+              class="form-input"
+              value={event.location}
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="location_map_url" class="form-label">Link Google Maps</label>
+            <input
+              type="url"
+              id="location_map_url"
+              name="location_map_url"
+              class="form-input"
+              value={event.location_map_url || ''}
+            />
+          </div>
+
+          <div class="form-group col-span-2">
+            <label for="flyer_url" class="form-label">URL Flyer Gambar</label>
+            <input
+              type="url"
+              id="flyer_url"
+              name="flyer_url"
+              class="form-input"
+              value={event.flyer_url || ''}
+            />
+          </div>
+
+          <div class="form-group col-span-2">
+            <label for="description" class="form-label">Deskripsi</label>
+            <textarea
+              id="description"
+              name="description"
+              class="form-textarea"
+              rows="3"
+            >{event.description || ''}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Aturan Pendaftaran -->
+      <div class="form-card">
+        <h3 class="form-section-title">
+          <span class="material-symbols-outlined" aria-hidden="true">rule</span>
+          Aturan Pendaftaran &amp; Pembayaran
+        </h3>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="payment_deadline_hours" class="form-label">Batas Waktu Bayar (Jam)</label>
+            <input
+              type="number"
+              id="payment_deadline_hours"
+              name="payment_deadline_hours"
+              class="form-input"
+              value={event.payment_deadline_hours}
+              min="1"
+              required
+            />
+            <span class="form-help">Waktu bagi peserta mentransfer sebelum pendaftaran kedaluwarsa.</span>
+          </div>
+
+          <div class="checkboxes-stack col-span-2">
+            <label class="custom-toggle">
+              <input type="checkbox" name="waitlist_enabled" checked={event.waitlist_enabled} />
+              <span class="toggle-text">
+                <strong>Izinkan Waiting List jika Kuota Penuh</strong>
+                <small>Peserta yang mendaftar saat kuota penuh akan masuk daftar antrean.</small>
+              </span>
+            </label>
+
+            <label class="custom-toggle">
+              <input type="checkbox" name="allow_duplicate_wa" checked={event.allow_duplicate_wa} />
+              <span class="toggle-text">
+                <strong>Izinkan Pendaftaran Ulang Nomor WhatsApp yang Sama</strong>
+                <small>Bila tidak dicentang, nomor WA yang sudah mendaftar tidak bisa daftar ganda.</small>
+              </span>
+            </label>
+
+            <label class="custom-toggle">
+              <input type="checkbox" name="show_on_landing" checked={event.show_on_landing} />
+              <span class="toggle-text">
+                <strong>Tampilkan Kartu Event di Landing Page</strong>
+                <small>Menampilkan event ini di section Event pada halaman utama happycoupleclass.com.</small>
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Rekening & Admin Konfirmator -->
+      <div class="form-card">
+        <h3 class="form-section-title">
+          <span class="material-symbols-outlined" aria-hidden="true">payments</span>
+          Rekening Pembayaran &amp; Admin Konfirmator
+        </h3>
+
+        <div class="form-group">
+          <label class="form-label">Rekening Pembayaran yang Digunakan</label>
+          <div class="checkbox-grid">
+            {paymentAccounts?.map((acc) => (
+              <label class="checkbox-card">
+                <input
+                  type="checkbox"
+                  name="payment_accounts"
+                  value={acc.id}
+                  checked={selectedPaymentAccounts.includes(acc.id)}
+                />
+                <div class="checkbox-card-content">
+                  <strong>{acc.bank_name}</strong>
+                  <span class="acc-num">{acc.account_number}</span>
+                  <span class="acc-holder">a.n {acc.account_name}</span>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div class="form-group mt-3">
+          <label class="form-label">Admin Konfirmator WhatsApp</label>
+          <div class="confirmators-list">
+            {adminsList?.map((adm) => (
+              <div class="confirmator-row">
+                <label class="checkbox-inline">
+                  <input
+                    type="checkbox"
+                    name="confirmators"
+                    value={adm.id}
+                    checked={selectedConfirmators.includes(adm.id)}
+                  />
+                  <span><strong>{adm.name}</strong> ({adm.whatsapp})</span>
+                </label>
+                <label class="radio-inline">
+                  <input
+                    type="radio"
+                    name="primary_confirmator"
+                    value={adm.id}
+                    checked={adm.id === primaryConfirmator}
+                  />
+                  <span>Konfirmator Utama</span>
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Kustomisasi Pesan -->
+      <div class="form-card">
+        <h3 class="form-section-title">
+          <span class="material-symbols-outlined" aria-hidden="true">chat</span>
+          Kustomisasi Pesan Khusus Event Ini (Opsional)
+        </h3>
+
+        <div class="form-group">
+          <label for="success_message" class="form-label">Pesan di Halaman Sukses Pendaftaran</label>
+          <textarea
+            id="success_message"
+            name="success_message"
+            class="form-textarea"
+            rows="2"
+            placeholder="Biarkan kosong untuk memakai pesan default sistem"
+          >{event.success_message || ''}</textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="wa_to_admin_template" class="form-label">Template WA Konfirmasi Peserta ke Admin</label>
+          <textarea
+            id="wa_to_admin_template"
+            name="wa_to_admin_template"
+            class="form-textarea"
+            rows="3"
+            placeholder="Biarkan kosong untuk memakai template default sistem"
+          >{event.wa_to_admin_template || ''}</textarea>
+        </div>
+      </div>
+
+      <div class="form-actions-card">
+        <a href="/admin/events" class="btn btn-secondary btn-md">Kembali</a>
+        <button type="submit" class="btn btn-primary btn-md">
+          <span class="material-symbols-outlined" aria-hidden="true">save</span>
+          Simpan Perubahan
+        </button>
+      </div>
+    </form>
+
+    <!-- Section: Akun Pendata Hari-H (/qrclass) -->
+    <div class="form-card staff-account-card">
+      <div class="card-title-between">
+        <div>
+          <h3 class="form-section-title">
+            <span class="material-symbols-outlined" aria-hidden="true">qr_code_scanner</span>
+            Akun Pendata Hari-H (/qrclass)
+          </h3>
+          <p class="form-card-desc">Gunakan ID Event dan Password di bawah untuk login tim penerima tamu di aplikasi scanner.</p>
+        </div>
+        {staffData && (
+          <span class={`badge ${staffData.is_active ? 'badge-ok' : 'badge-neutral'}`}>
+            {staffData.is_active ? 'Scanner Aktif' : 'Scanner Nonaktif'}
+          </span>
+        )}
+      </div>
+
+      <div class="staff-info-box">
+        <div class="info-row">
+          <span class="info-lbl">ID Event untuk Login Scanner:</span>
+          <div class="info-val-wrap">
+            <code class="info-code" id="event-id-text">{event.id}</code>
+            <button type="button" class="btn-copy-id btn-icon" id="btn-copy-id" title="Salin ID Event">
+              <span class="material-symbols-outlined" aria-hidden="true">content_copy</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="info-row">
+          <span class="info-lbl">Status Akun Scanner:</span>
+          <span>{staffData ? (staffData.is_active ? 'Siap digunakan' : 'Dinonaktifkan') : 'Belum dibuat'}</span>
+        </div>
+      </div>
+
+      <div class="staff-actions-row">
+        <form method="POST" style="display:inline;">
+          <input type="hidden" name="_action" value="reset_staff_password" />
+          <button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('Buat/reset password untuk akun scanner event ini? Password baru akan langsung ditampilkan.');">
+            <span class="material-symbols-outlined" aria-hidden="true">key</span>
+            {staffData ? 'Reset Password Scanner' : 'Buat Password Scanner'}
+          </button>
+        </form>
+
+        {staffData && (
+          <form method="POST" style="display:inline;">
+            <input type="hidden" name="_action" value="toggle_staff_active" />
+            <input type="hidden" name="current_staff_active" value={staffData.is_active ? 'true' : 'false'} />
+            <button type="submit" class="btn btn-secondary btn-sm">
+              <span class="material-symbols-outlined" aria-hidden="true">
+                {staffData.is_active ? 'block' : 'check_circle'}
+              </span>
+              {staffData.is_active ? 'Nonaktifkan Scanner' : 'Aktifkan Scanner'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+
+    <!-- Section: Zona Bahaya (Hapus Event) -->
+    <div class="form-card danger-zone-card">
+      <div class="danger-zone-header">
+        <span class="material-symbols-outlined text-danger danger-icon" aria-hidden="true">warning</span>
+        <div>
+          <h3 class="danger-zone-title">Zona Bahaya: Hapus Event Ini</h3>
+          <p class="danger-zone-desc">Menghapus event akan menyembunyikannya dari daftar event admin dan mematikan halaman pendaftaran publik. Data peserta yang sudah mendaftar tetap tersimpan aman di database.</p>
+        </div>
+      </div>
+      <form method="POST" onsubmit="return confirm('Apakah Anda yakin ingin menghapus event ini? Event tidak akan muncul lagi di website.');">
+        <input type="hidden" name="_action" value="delete_event" />
+        <button type="submit" class="btn btn-danger btn-sm">
+          <span class="material-symbols-outlined" aria-hidden="true">delete</span>
+          Hapus Event Ini
+        </button>
+      </form>
+    </div>
+  </div>
+</AdminLayout>
+
+<script>
+  // Copy Event ID
+  const btnCopyId = document.getElementById('btn-copy-id');
+  const eventIdText = document.getElementById('event-id-text')?.textContent;
+  btnCopyId?.addEventListener('click', async () => {
+    if (eventIdText) {
+      await navigator.clipboard.writeText(eventIdText);
+      alert('ID Event disalin ke clipboard!');
+    }
+  });
+
+  // Copy Generated Password
+  const btnCopyPass = document.getElementById('btn-copy-pass');
+  btnCopyPass?.addEventListener('click', async () => {
+    const pass = btnCopyPass.getAttribute('data-pass');
+    if (pass) {
+      await navigator.clipboard.writeText(pass);
+      alert('Password scanner berhasil disalin!');
+    }
+  });
+</script>
+
+<style>
+  .edit-page-container {
+    max-width: 960px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ink-600);
+    margin-bottom: 6px;
+  }
+  .breadcrumb a { color: var(--pink-500); text-decoration: none; }
+  .breadcrumb .material-symbols-outlined { font-size: 16px; }
+
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .page-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 4px 0;
+  }
+
+  .page-desc {
+    font-size: 12px;
+    color: var(--ink-400);
+    margin: 0;
+  }
+  .page-desc code { font-family: monospace; color: var(--ink-600); }
+
+  .header-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .alert {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-radius: var(--radius-md);
+    font-size: 14px;
+  }
+  .alert-success { background: var(--ok-bg); color: var(--ok); border: 1px solid rgba(46, 158, 107, 0.2); }
+  .alert-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(214, 69, 69, 0.2); }
+
+  .staff-password-banner {
+    background: #fff8e8;
+    border: 1px solid var(--warn);
+    border-radius: var(--radius-lg);
+    padding: 20px 24px;
+  }
+
+  .staff-pass-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .staff-pass-icon {
+    font-size: 32px;
+    color: var(--warn);
+    flex-shrink: 0;
+  }
+
+  .staff-pass-desc {
+    font-size: 13px;
+    color: var(--ink-600);
+    margin: 4px 0 12px 0;
+  }
+
+  .staff-pass-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .staff-pass-code {
+    font-family: monospace;
+    font-size: 20px;
+    font-weight: 700;
+    background: var(--white);
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--warn);
+    color: var(--ink-900);
+    letter-spacing: 2px;
+  }
+
+  .event-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .form-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .form-section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink-900);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+  }
+  .form-section-title .material-symbols-outlined { color: var(--pink-500); font-size: 20px; }
+
+  .form-card-desc {
+    font-size: 13px;
+    color: var(--ink-600);
+    margin: -8px 0 0 0;
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .col-span-2 { grid-column: span 2; }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .form-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-900);
+  }
+
+  .required { color: var(--danger); }
+
+  .form-input, .form-select, .form-textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 150ms ease;
+  }
+
+  .form-input:focus, .form-select:focus, .form-textarea:focus {
+    border-color: var(--pink-400);
+    box-shadow: 0 0 0 3px var(--pink-100);
+  }
+
+  .form-help { font-size: 11px; color: var(--ink-400); }
+
+  .checkboxes-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .custom-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+    background: #faf7f8;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+  }
+
+  .toggle-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .toggle-text strong { font-size: 13px; color: var(--ink-900); }
+  .toggle-text small { font-size: 12px; color: var(--ink-600); }
+
+  .checkbox-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+  }
+
+  .checkbox-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    cursor: pointer;
+  }
+
+  .checkbox-card-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 13px;
+  }
+
+  .acc-num { font-family: monospace; font-size: 12px; }
+  .acc-holder { font-size: 11px; color: var(--ink-600); }
+
+  .confirmators-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .confirmator-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: #faf7f8;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+  }
+
+  .checkbox-inline, .radio-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .radio-inline { font-size: 12px; color: var(--ink-600); }
+
+  .form-actions-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 16px 24px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* Staff Account */
+  .staff-account-card {
+    border-top: 3px solid var(--pink-400);
+  }
+
+  .card-title-between {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .staff-info-box {
+    background: var(--pink-50);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 13px;
+  }
+
+  .info-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .info-lbl { font-weight: 500; color: var(--ink-600); width: 200px; }
+
+  .info-val-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .info-code {
+    font-family: monospace;
+    font-weight: 600;
+    color: var(--ink-900);
+    background: var(--white);
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+  }
+
+  .staff-actions-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .btn-icon {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-600);
+    cursor: pointer;
+  }
+  .btn-icon:hover { color: var(--pink-500); }
+  .btn-icon .material-symbols-outlined { font-size: 18px; }
+
+  .mt-3 { margin-top: 12px; }
+
+  /* Danger Zone */
+  .danger-zone-card {
+    border-color: rgba(214, 69, 69, 0.25);
+    background: #fffbfa;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .danger-zone-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    max-width: 640px;
+  }
+
+  .danger-icon {
+    font-size: 28px;
+    flex-shrink: 0;
+    color: var(--danger);
+  }
+
+  .danger-zone-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--danger);
+    margin: 0 0 4px 0;
+  }
+
+  .danger-zone-desc {
+    font-size: 13px;
+    color: var(--ink-600);
+    margin: 0;
+    line-height: 1.45;
+  }
+
+  .btn-danger {
+    background: var(--danger);
+    color: var(--white);
+    border: none;
+    font-weight: 500;
+  }
+
+  .btn-danger:hover {
+    background: #c53030;
+  }
+
+  .btn-public-header {
+    background: var(--white);
+    color: var(--pink-600);
+    border-color: var(--pink-200);
+  }
+
+  .btn-public-header:hover {
+    background: var(--pink-50);
+    color: var(--pink-700);
+    border-color: var(--pink-300);
+  }
+
+  .icon-14 { font-size: 14px; margin-left: 2px; }
+
+  @media (max-width: 640px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .col-span-2 { grid-column: span 1; }
+    .confirmator-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .info-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+  }
+</style>

@@ -1,0 +1,53 @@
+/* HCC Design Tokens */
+:root {
+  /* permukaan */
+  --white:        #FFFFFF;
+  --pink-50:      #FFF7FA;   /* latar section selang-seling */
+  --pink-100:     #FDEAF1;   /* kotak ikon, badge */
+  --pink-200:     #F9D3E2;   /* border aksen */
+
+  /* pink */
+  --pink-500:     #E85D8A;   /* DEKORATIF saja (bentuk, garis, ilustrasi) */
+  --pink-600:     #C2366A;   /* tombol primer, teks aksen, link (kontras ±5,2:1 di atas putih) */
+  --pink-700:     #A82B58;   /* hover/pressed, ikon di atas --pink-100 */
+
+  /* teks */
+  --ink-900:      #1F1A1D;   /* judul */
+  --ink-700:      #4A4047;   /* paragraf */
+  --ink-600:      #6B6168;   /* teks sekunder/meta (jangan lebih terang dari ini) */
+  --ink-400:      #8E848B;   /* placeholder (kontras minimal untuk placeholder) */
+
+  /* garis */
+  --line:         #F1E4EA;   /* pemisah halus (dekoratif) */
+  --line-strong:  #E4CBD6;   /* border tombol sekunder dan input */
+
+  /* status */
+  --ok:           #2E9E6B;
+  --ok-bg:        #E9F7F0;
+  --warn:         #C98A12;
+  --warn-bg:      #FFF6DF;
+  --danger:       #D64545;
+  --danger-bg:    #FDECEC;
+
+  /* bentuk */
+  --radius-sm:    10px;
+  --radius-md:    14px;
+  --radius-lg:    20px;
+  --radius-xl:    28px;
+  --shadow-sm:    0 1px 2px rgba(31, 26, 29, .05);
+  --shadow-md:    0 10px 30px rgba(194, 54, 106, .08);
+
+  /* tata letak */
+  --container:    1120px;
+  --section-y:    96px;      /* mobile: 64px */
+  --heading-gap:  48px;      /* jarak blok judul ke isi */
+  --space-section: var(--section-y);
+}
+
+@media (max-width: 640px) {
+  :root {
+    --section-y: 64px;
+    --heading-gap: 36px;
+    --space-section: 64px;
+  }
+}

@@ -1,0 +1,568 @@
+---
+export const prerender = false;
+
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { requireAdmin } from '../../lib/auth';
+import { supabase, createServiceClient } from '../../lib/supabase';
+import { formatDateWIB } from '../../lib/format';
+
+const authResult = await requireAdmin(Astro);
+if (authResult instanceof Response) return authResult;
+const { admin } = authResult;
+
+const url = new URL(Astro.request.url);
+const search = url.searchParams.get('q') || '';
+const actionFilter = url.searchParams.get('action') || '';
+const targetFilter = url.searchParams.get('target') || '';
+const page = parseInt(url.searchParams.get('page') || '1', 10);
+const pageSize = 25;
+
+let client = supabase;
+try {
+  client = createServiceClient();
+} catch (e) {
+  client = supabase;
+}
+
+// Build query
+let query = client
+  .from('audit_logs')
+  .select('*', { count: 'exact' });
+
+if (actionFilter) {
+  query = query.eq('action', actionFilter);
+}
+
+if (targetFilter) {
+  query = query.eq('target_type', targetFilter);
+}
+
+if (search) {
+  // Postgrest search across fields
+  query = query.or(`action.ilike.%${search}%,target_type.ilike.%${search}%,target_id.ilike.%${search}%,admin_name.ilike.%${search}%`);
+}
+
+const from = (page - 1) * pageSize;
+const to = from + pageSize - 1;
+
+const { data: logs, count, error } = await query
+  .order('created_at', { ascending: false })
+  .range(from, to);
+
+const totalCount = count || 0;
+const totalPages = Math.ceil(totalCount / pageSize);
+
+// Helper to format action names into human-readable Indonesian labels
+function getActionBadge(action: string) {
+  switch (action) {
+    case 'confirm_payment':
+      return { label: 'Konfirmasi Pembayaran', color: 'var(--ok)', bg: 'var(--ok-light)' };
+    case 'create_event':
+      return { label: 'Buat Event', color: 'var(--pink-600)', bg: 'var(--pink-100)' };
+    case 'update_event':
+      return { label: 'Ubah Event', color: '#0284c7', bg: '#e0f2fe' };
+    case 'delete_event':
+      return { label: 'Hapus Event', color: 'var(--err)', bg: 'var(--err-light)' };
+    case 'save_form':
+      return { label: 'Simpan Formulir', color: '#7c3aed', bg: '#ede9fe' };
+    case 'save_page':
+      return { label: 'Simpan Halaman', color: '#2563eb', bg: '#dbeafe' };
+    case 'update_settings':
+      return { label: 'Ubah Pengaturan', color: '#d97706', bg: '#fef3c7' };
+    default:
+      return { label: action, color: 'var(--ink-700)', bg: 'var(--ink-100)' };
+  }
+}
+---
+
+<AdminLayout title="Log Audit Sistem" adminName={admin.name} adminRole={admin.role}>
+  <div class="log-page">
+    <div class="log-header">
+      <div>
+        <p class="log-subtitle">
+          Riwayat kronologis seluruh tindakan staf, admin, dan sistem untuk transparansi dan audit keamanan.
+        </p>
+      </div>
+      <div class="log-summary-pill">
+        <span class="material-symbols-outlined" style="font-size: 18px; color: var(--pink-500);">history</span>
+        <span>Total <strong>{totalCount}</strong> catatan</span>
+      </div>
+    </div>
+
+    {error && (
+      <div class="alert alert-error">
+        <span class="material-symbols-outlined">error</span>
+        <span>Gagal memuat log audit: {error.message}</span>
+      </div>
+    )}
+
+    <!-- Filter Bar -->
+    <div class="filter-card">
+      <form method="GET" class="filter-form">
+        <div class="search-input-group">
+          <span class="material-symbols-outlined search-icon">search</span>
+          <input
+            type="text"
+            name="q"
+            value={search}
+            placeholder="Cari aksi, admin, target ID..."
+            class="filter-input"
+          />
+        </div>
+
+        <select name="action" class="filter-select">
+          <option value="">Semua Aksi</option>
+          <option value="confirm_payment" selected={actionFilter === 'confirm_payment'}>Konfirmasi Pembayaran</option>
+          <option value="create_event" selected={actionFilter === 'create_event'}>Buat Event</option>
+          <option value="update_event" selected={actionFilter === 'update_event'}>Ubah Event</option>
+          <option value="delete_event" selected={actionFilter === 'delete_event'}>Hapus Event</option>
+          <option value="save_form" selected={actionFilter === 'save_form'}>Simpan Formulir</option>
+          <option value="save_page" selected={actionFilter === 'save_page'}>Simpan Halaman</option>
+          <option value="update_settings" selected={actionFilter === 'update_settings'}>Ubah Pengaturan</option>
+        </select>
+
+        <select name="target" class="filter-select">
+          <option value="">Semua Target</option>
+          <option value="registration" selected={targetFilter === 'registration'}>Pendaftaran (Peserta)</option>
+          <option value="event" selected={targetFilter === 'event'}>Event</option>
+          <option value="form_fields" selected={targetFilter === 'form_fields'}>Formulir</option>
+          <option value="page" selected={targetFilter === 'page'}>Halaman</option>
+          <option value="site_settings" selected={targetFilter === 'site_settings'}>Pengaturan</option>
+        </select>
+
+        <button type="submit" class="btn btn-secondary btn-sm">
+          <span class="material-symbols-outlined" style="font-size: 18px;">filter_list</span>
+          Filter
+        </button>
+
+        {(search || actionFilter || targetFilter) && (
+          <a href="/admin/log" class="btn btn-ghost btn-sm" title="Hapus Filter">
+            <span class="material-symbols-outlined" style="font-size: 18px;">close</span>
+            Reset
+          </a>
+        )}
+      </form>
+    </div>
+
+    <!-- Table Card -->
+    <div class="table-card">
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Waktu (WIB)</th>
+              <th>Admin / Pelaksana</th>
+              <th>Aksi</th>
+              <th>Target</th>
+              <th>ID Target</th>
+              <th>Detail Data</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logs && logs.length > 0 ? (
+              logs.map((log) => {
+                const badge = getActionBadge(log.action);
+                const hasDetails = log.details && Object.keys(log.details).length > 0;
+                return (
+                  <tr>
+                    <td class="cell-time">
+                      <span class="time-main">{formatDateWIB(log.created_at)}</span>
+                    </td>
+                    <td class="cell-admin">
+                      <div class="admin-pill">
+                        <span class="material-symbols-outlined icon-admin">person</span>
+                        <span class="admin-name">{log.admin_name || 'Admin Sistem'}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <span
+                        class="action-badge"
+                        style={`color: ${badge.color}; background-color: ${badge.bg}; border: 1px solid ${badge.color}33;`}
+                      >
+                        {badge.label}
+                      </span>
+                    </td>
+                    <td>
+                      <span class="target-type">{log.target_type || '-'}</span>
+                    </td>
+                    <td class="cell-id">
+                      {log.target_id ? (
+                        <code class="code-id" title={log.target_id}>
+                          {log.target_id.length > 12
+                            ? `${log.target_id.slice(0, 8)}...${log.target_id.slice(-4)}`
+                            : log.target_id}
+                        </code>
+                      ) : (
+                        <span class="text-muted">-</span>
+                      )}
+                    </td>
+                    <td class="cell-details">
+                      {hasDetails ? (
+                        <details class="log-details-accordion">
+                          <summary class="details-summary">
+                            <span class="material-symbols-outlined" style="font-size: 16px;">data_object</span>
+                            Lihat Rincian
+                          </summary>
+                          <pre class="json-viewer">{JSON.stringify(log.details, null, 2)}</pre>
+                        </details>
+                      ) : (
+                        <span class="text-muted">-</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colspan="6" class="empty-state">
+                  <div class="empty-wrap">
+                    <span class="material-symbols-outlined empty-icon">manage_search</span>
+                    <p class="empty-title">Tidak ada log aktivitas ditemukan</p>
+                    <p class="empty-desc">
+                      {search || actionFilter || targetFilter
+                        ? 'Coba ubah filter atau kata kunci pencarian Anda.'
+                        : 'Belum ada aktivitas administratif yang tercatat di sistem.'}
+                    </p>
+                  </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      {totalPages > 1 && (
+        <div class="pagination-footer">
+          <span class="pagination-info">
+            Halaman {page} dari {totalPages} ({totalCount} total)
+          </span>
+          <div class="pagination-buttons">
+            {page > 1 && (
+              <a
+                href={`?page=${page - 1}&q=${encodeURIComponent(search)}&action=${encodeURIComponent(actionFilter)}&target=${encodeURIComponent(targetFilter)}`}
+                class="btn btn-secondary btn-sm"
+              >
+                <span class="material-symbols-outlined" style="font-size: 18px;">chevron_left</span>
+                Sebelumnya
+              </a>
+            )}
+            {page < totalPages && (
+              <a
+                href={`?page=${page + 1}&q=${encodeURIComponent(search)}&action=${encodeURIComponent(actionFilter)}&target=${encodeURIComponent(targetFilter)}`}
+                class="btn btn-secondary btn-sm"
+              >
+                Berikutnya
+                <span class="material-symbols-outlined" style="font-size: 18px;">chevron_right</span>
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+</AdminLayout>
+
+<style>
+  .log-page {
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .log-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .log-subtitle {
+    margin: 0;
+    font-size: 14px;
+    color: var(--ink-500);
+    max-width: 600px;
+  }
+
+  .log-summary-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: var(--radius-full);
+    background: var(--white);
+    border: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--ink-700);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .filter-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .filter-form {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .search-input-group {
+    position: relative;
+    flex: 1;
+    min-width: 220px;
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 20px;
+    color: var(--ink-400);
+    pointer-events: none;
+  }
+
+  .filter-input {
+    width: 100%;
+    padding: 8px 12px 8px 40px;
+    font-size: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--white);
+    color: var(--ink-900);
+    transition: var(--transition-fast);
+  }
+
+  .filter-input:focus {
+    outline: none;
+    border-color: var(--pink-500);
+    box-shadow: 0 0 0 3px var(--pink-100);
+  }
+
+  .filter-select {
+    padding: 8px 12px;
+    font-size: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--white);
+    color: var(--ink-800);
+    cursor: pointer;
+  }
+
+  .filter-select:focus {
+    outline: none;
+    border-color: var(--pink-500);
+  }
+
+  .table-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+
+  .table-responsive {
+    overflow-x: auto;
+  }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 13px;
+  }
+
+  .data-table th {
+    background: var(--pink-50);
+    padding: 12px 16px;
+    font-weight: 600;
+    color: var(--ink-700);
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+
+  .data-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+  }
+
+  .data-table tbody tr:hover {
+    background: #fafafa;
+  }
+
+  .cell-time {
+    white-space: nowrap;
+    color: var(--ink-700);
+  }
+
+  .time-main {
+    font-weight: 500;
+  }
+
+  .cell-admin {
+    white-space: nowrap;
+  }
+
+  .admin-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--ink-800);
+    font-weight: 500;
+  }
+
+  .icon-admin {
+    font-size: 16px;
+    color: var(--ink-400);
+  }
+
+  .action-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .target-type {
+    display: inline-block;
+    padding: 2px 8px;
+    background: var(--ink-100);
+    color: var(--ink-700);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-family: monospace;
+  }
+
+  .cell-id {
+    font-family: monospace;
+  }
+
+  .code-id {
+    background: #f1f5f9;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--ink-800);
+    font-size: 12px;
+  }
+
+  .cell-details {
+    max-width: 280px;
+  }
+
+  .details-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--pink-600);
+    cursor: pointer;
+    font-weight: 500;
+    user-select: none;
+  }
+
+  .details-summary:hover {
+    text-decoration: underline;
+  }
+
+  .json-viewer {
+    margin: 8px 0 0 0;
+    padding: 8px;
+    background: #0f172a;
+    color: #f8fafc;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-family: monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .text-muted {
+    color: var(--ink-400);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 16px;
+  }
+
+  .empty-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .empty-icon {
+    font-size: 48px;
+    color: var(--ink-300);
+  }
+
+  .empty-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink-800);
+    margin: 0;
+  }
+
+  .empty-desc {
+    font-size: 13px;
+    color: var(--ink-500);
+    margin: 0;
+  }
+
+  .pagination-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--white);
+    border-top: 1px solid var(--line);
+  }
+
+  .pagination-info {
+    font-size: 13px;
+    color: var(--ink-500);
+  }
+
+  .pagination-buttons {
+    display: flex;
+    gap: 8px;
+  }
+
+  @media (max-width: 768px) {
+    .log-page {
+      padding: 16px;
+    }
+
+    .filter-form {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .search-input-group {
+      width: 100%;
+    }
+
+    .pagination-footer {
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+    }
+  }
+</style>

@@ -1,0 +1,145 @@
+---
+export const prerender = false;
+
+import { requireAdmin } from '../../../../lib/auth';
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { createServiceClient } from '../../../../lib/supabase';
+import { FormBuilder } from '../../../../components/admin/FormBuilder';
+
+const authResult = await requireAdmin(Astro);
+if (authResult instanceof Response) return authResult;
+
+const { admin } = authResult;
+const { id: eventId } = Astro.params;
+
+if (!eventId) return Astro.redirect('/admin/events');
+
+const supabase = createServiceClient();
+
+// Fetch event details
+const { data: event, error: eventError } = await supabase
+  .from('events')
+  .select('id, title, slug, status')
+  .eq('id', eventId)
+  .is('deleted_at', null)
+  .single();
+
+if (eventError || !event) return Astro.redirect('/admin/events');
+
+// Fetch existing form fields
+const { data: fields } = await supabase
+  .from('form_fields')
+  .select('*')
+  .eq('event_id', eventId)
+  .order('sort_order', { ascending: true });
+
+// Check existing registrations count
+const { count: regCount } = await supabase
+  .from('registrations')
+  .select('id', { count: 'exact', head: true })
+  .eq('event_id', eventId)
+  .is('deleted_at', null);
+
+const initialFields = (fields || []).map((f) => ({
+  id: f.id,
+  field_key: f.field_key,
+  label: f.label,
+  type: f.type,
+  placeholder: f.placeholder,
+  help_text: f.help_text,
+  is_required: f.is_required,
+  options: f.options as any,
+  validation: f.validation as any,
+  sort_order: f.sort_order,
+}));
+---
+
+<AdminLayout title={`Form Builder: ${event.title}`} adminName={admin.name} adminRole={admin.role}>
+  <div class="form-builder-page">
+    <div class="fb-page-header">
+      <div class="breadcrumb">
+        <a href="/admin/events">Event</a>
+        <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+        <a href={`/admin/events/${event.id}/edit`}>{event.title}</a>
+        <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+        <span>Form Builder</span>
+      </div>
+      <div class="header-main-row">
+        <div>
+          <h2 class="fb-main-title">Form Builder: {event.title}</h2>
+          <p class="fb-main-desc">Atur pertanyaan pendaftaran untuk calon peserta. Perubahan tersimpan secara otomatis.</p>
+        </div>
+        <div class="header-action-links">
+          <a href={`/admin/events/${event.id}/edit`} class="btn btn-secondary btn-sm">
+            <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+            Pengaturan Kelas
+          </a>
+          <a href={`/admin/events/${event.id}/peserta`} class="btn btn-secondary btn-sm">
+            <span class="material-symbols-outlined" aria-hidden="true">group</span>
+            Lihat Peserta
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interactive Form Builder Component -->
+    <FormBuilder
+      client:load
+      eventId={event.id}
+      eventSlug={event.slug}
+      eventTitle={event.title}
+      initialFields={initialFields}
+      registrationCount={regCount || 0}
+    />
+  </div>
+</AdminLayout>
+
+<style>
+  .form-builder-page {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ink-600);
+    margin-bottom: 6px;
+  }
+
+  .breadcrumb a {
+    color: var(--pink-500);
+    text-decoration: none;
+  }
+
+  .breadcrumb .material-symbols-outlined { font-size: 16px; }
+
+  .header-main-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .fb-main-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 4px 0;
+  }
+
+  .fb-main-desc {
+    font-size: 14px;
+    color: var(--ink-600);
+    margin: 0;
+  }
+
+  .header-action-links {
+    display: flex;
+    gap: 8px;
+  }
+</style>

@@ -1,0 +1,885 @@
+---
+export const prerender = false;
+
+import { requireAdmin } from '../../lib/auth';
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { createServiceClient } from '../../lib/supabase';
+
+const authResult = await requireAdmin(Astro);
+if (authResult instanceof Response) return authResult;
+
+const { admin } = authResult;
+
+// Only super_admin can access
+if (admin.role !== 'super_admin') {
+  return Astro.redirect('/admin');
+}
+
+const supabase = createServiceClient();
+let successMessage = '';
+let errorMessage = '';
+
+// Handle actions
+if (Astro.request.method === 'POST') {
+  try {
+    const formData = await Astro.request.formData();
+    const section = formData.get('_section') as string;
+    const action = formData.get('_action') as string;
+
+    if (section === 'rekening') {
+      if (action === 'create') {
+        const bankName = (formData.get('bank_name') as string)?.trim();
+        const accountNumber = (formData.get('account_number') as string)?.trim();
+        const accountName = (formData.get('account_name') as string)?.trim();
+
+        if (!bankName || !accountNumber || !accountName) throw new Error('Semua data rekening wajib diisi.');
+
+        const { error } = await supabase.from('payment_accounts').insert({
+          bank_name: bankName,
+          account_number: accountNumber,
+          account_name: accountName,
+          is_active: true,
+        });
+        if (error) throw error;
+        successMessage = 'Rekening pembayaran berhasil ditambahkan.';
+      } else if (action === 'toggle') {
+        const id = formData.get('id') as string;
+        const currentActive = formData.get('is_active') === 'true';
+        const { error } = await supabase
+          .from('payment_accounts')
+          .update({ is_active: !currentActive, updated_at: new Date().toISOString() })
+          .eq('id', id);
+        if (error) throw error;
+        successMessage = 'Status rekening diperbarui.';
+      } else if (action === 'delete') {
+        const id = formData.get('id') as string;
+        const { error } = await supabase.from('payment_accounts').delete().eq('id', id);
+        if (error) throw error;
+        successMessage = 'Rekening pembayaran berhasil dihapus.';
+      }
+    } else if (section === 'admin_user') {
+      if (action === 'create') {
+        const email = (formData.get('email') as string)?.trim();
+        const password = formData.get('password') as string;
+        const name = (formData.get('name') as string)?.trim();
+        let whatsapp = (formData.get('whatsapp') as string)?.trim() || '';
+        const role = (formData.get('role') as string) || 'admin';
+
+        if (!email || !password || !name || !whatsapp) throw new Error('Semua field admin wajib diisi.');
+
+        // Normalize whatsapp
+        whatsapp = whatsapp.replace(/\D/g, '');
+        if (whatsapp.startsWith('0')) whatsapp = '62' + whatsapp.slice(1);
+
+        // 1. Create auth user
+        const { data: userData, error: authError } = await supabase.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true,
+        });
+
+        if (authError || !userData.user) throw new Error(authError?.message || 'Gagal membuat user auth.');
+
+        // 2. Insert into admins table
+        const { error: insertError } = await supabase.from('admins').insert({
+          id: userData.user.id,
+          name,
+          email,
+          whatsapp,
+          role: role as 'super_admin' | 'admin',
+          is_active: true,
+        });
+
+        if (insertError) {
+          // Rollback auth user
+          await supabase.auth.admin.deleteUser(userData.user.id);
+          throw insertError;
+        }
+
+        successMessage = `Admin ${name} berhasil ditambahkan.`;
+      } else if (action === 'toggle_active') {
+        const id = formData.get('id') as string;
+        const currentActive = formData.get('is_active') === 'true';
+
+        if (id === admin.id) throw new Error('Anda tidak dapat menonaktifkan akun sendiri.');
+
+        const { error } = await supabase
+          .from('admins')
+          .update({ is_active: !currentActive, updated_at: new Date().toISOString() })
+          .eq('id', id);
+        if (error) throw error;
+        successMessage = 'Status admin diperbarui.';
+      } else if (action === 'update_profile') {
+        const id = formData.get('id') as string;
+        const name = (formData.get('name') as string)?.trim();
+        let whatsapp = (formData.get('whatsapp') as string)?.trim() || '';
+        const role = formData.get('role') as 'super_admin' | 'admin';
+
+        whatsapp = whatsapp.replace(/\D/g, '');
+        if (whatsapp.startsWith('0')) whatsapp = '62' + whatsapp.slice(1);
+
+        const { error } = await supabase
+          .from('admins')
+          .update({ name, whatsapp, role, updated_at: new Date().toISOString() })
+          .eq('id', id);
+        if (error) throw error;
+        successMessage = 'Data admin diperbarui.';
+      }
+    } else if (section === 'settings') {
+      const keys = ['default_wa_to_admin', 'default_wa_to_user', 'default_success_message'];
+      for (const key of keys) {
+        const val = formData.get(key) as string;
+        if (val !== null) {
+          await supabase.from('site_settings').upsert({
+            key,
+            value: val,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      }
+      successMessage = 'Pengaturan template pesan berhasil disimpan.';
+    }
+  } catch (err: any) {
+    errorMessage = err.message || 'Terjadi kesalahan menyimpan data.';
+  }
+}
+
+// Fetch payment accounts
+const { data: accountsList } = await supabase
+  .from('payment_accounts')
+  .select('*')
+  .order('created_at', { ascending: true });
+const paymentAccounts = accountsList || [];
+
+// Fetch admins
+const { data: adminsList } = await supabase
+  .from('admins')
+  .select('*')
+  .order('created_at', { ascending: true });
+const allAdmins = adminsList || [];
+
+// Fetch site settings
+const { data: settingsList } = await supabase.from('site_settings').select('*');
+const settingsMap: Record<string, any> = {};
+settingsList?.forEach((s) => {
+  settingsMap[s.key] = s.value;
+});
+
+const defaultWaToAdmin = settingsMap['default_wa_to_admin'] || 'Halo Admin HCC, saya ingin konfirmasi pembayaran untuk {event}.\nNama: {husband} & {wife}\nKode: {reg_code}';
+const defaultWaToUser = settingsMap['default_wa_to_user'] || 'Alhamdulillah, pembayaran pendaftaran {event} untuk {husband} & {wife} telah kami verifikasi.\nBerikut link tiket kedatangan Anda:\n{ticket_link}';
+const defaultSuccessMessage = settingsMap['default_success_message'] || 'Selamat, pendaftaran Anda sudah kami rekam. Silakan lakukan pembayaran lalu konfirmasi lewat tombol di bawah.';
+---
+
+<AdminLayout title="Pengaturan Sistem" adminName={admin.name} adminRole={admin.role}>
+  <div class="settings-container">
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">Pengaturan Sistem</h2>
+        <p class="page-desc">Konfigurasi rekening tujuan pembayaran, akun admin pengelola, dan template pesan WhatsApp.</p>
+      </div>
+    </div>
+
+    {successMessage && (
+      <div class="alert alert-success" role="alert">
+        <span class="material-symbols-outlined" aria-hidden="true">check_circle</span>
+        <span>{successMessage}</span>
+      </div>
+    )}
+
+    {errorMessage && (
+      <div class="alert alert-danger" role="alert">
+        <span class="material-symbols-outlined" aria-hidden="true">error</span>
+        <span>{errorMessage}</span>
+      </div>
+    )}
+
+    <!-- Navigation Tabs -->
+    <div class="settings-tabs" role="tablist">
+      <button type="button" class="tab-btn active" data-tab="tab-rekening" role="tab" aria-selected="true">
+        <span class="material-symbols-outlined" aria-hidden="true">payments</span>
+        Rekening Pembayaran ({paymentAccounts.length})
+      </button>
+      <button type="button" class="tab-btn" data-tab="tab-admin" role="tab" aria-selected="false">
+        <span class="material-symbols-outlined" aria-hidden="true">manage_accounts</span>
+        Kelola Admin ({allAdmins.length})
+      </button>
+      <button type="button" class="tab-btn" data-tab="tab-template" role="tab" aria-selected="false">
+        <span class="material-symbols-outlined" aria-hidden="true">chat</span>
+        Template WhatsApp
+      </button>
+    </div>
+
+    <!-- TAB 1: Rekening Pembayaran -->
+    <div id="tab-rekening" class="tab-content active" role="tabpanel">
+      <div class="section-card">
+        <div class="section-card-header">
+          <div>
+            <h3 class="section-title">Rekening Bank Tujuan</h3>
+            <p class="section-desc">Rekening yang akan dipilih dan ditampilkan pada halaman sukses pendaftaran event.</p>
+          </div>
+          <button type="button" id="btn-add-rekening" class="btn btn-primary btn-sm">
+            <span class="material-symbols-outlined" aria-hidden="true">add</span>
+            Tambah Rekening
+          </button>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Bank</th>
+                <th>Nomor Rekening</th>
+                <th>Atas Nama</th>
+                <th>Status</th>
+                <th class="text-right">Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paymentAccounts.length === 0 ? (
+                <tr>
+                  <td colspan="5" class="text-center py-6 text-muted">Belum ada rekening pembayaran terdaftar.</td>
+                </tr>
+              ) : (
+                paymentAccounts.map((acc) => (
+                  <tr>
+                    <td><strong>{acc.bank_name}</strong></td>
+                    <td><code>{acc.account_number}</code></td>
+                    <td>{acc.account_name}</td>
+                    <td>
+                      <span class={`badge ${acc.is_active ? 'badge-ok' : 'badge-neutral'}`}>
+                        {acc.is_active ? 'Aktif' : 'Nonaktif'}
+                      </span>
+                    </td>
+                    <td class="text-right">
+                      <div class="action-buttons">
+                        <form method="POST" style="display:inline;">
+                          <input type="hidden" name="_section" value="rekening" />
+                          <input type="hidden" name="_action" value="toggle" />
+                          <input type="hidden" name="id" value={acc.id} />
+                          <input type="hidden" name="is_active" value={acc.is_active ? 'true' : 'false'} />
+                          <button type="submit" class="btn-icon" title={acc.is_active ? 'Nonaktifkan' : 'Aktifkan'}>
+                            <span class="material-symbols-outlined" aria-hidden="true">
+                              {acc.is_active ? 'toggle_on' : 'toggle_off'}
+                            </span>
+                          </button>
+                        </form>
+                        <form method="POST" style="display:inline;" onsubmit="return confirm('Hapus rekening ini?');">
+                          <input type="hidden" name="_section" value="rekening" />
+                          <input type="hidden" name="_action" value="delete" />
+                          <input type="hidden" name="id" value={acc.id} />
+                          <button type="submit" class="btn-icon btn-delete" title="Hapus">
+                            <span class="material-symbols-outlined" aria-hidden="true">delete</span>
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: Kelola Admin -->
+    <div id="tab-admin" class="tab-content" role="tabpanel" style="display: none;">
+      <div class="section-card">
+        <div class="section-card-header">
+          <div>
+            <h3 class="section-title">Daftar Admin HCC</h3>
+            <p class="section-desc">Admin bertugas mengonfirmasi pembayaran dan menerima pesan WA dari peserta.</p>
+          </div>
+          <button type="button" id="btn-add-admin" class="btn btn-primary btn-sm">
+            <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
+            Tambah Admin
+          </button>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Nama</th>
+                <th>Email</th>
+                <th>Nomor WhatsApp</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th class="text-right">Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allAdmins.map((adm) => (
+                <tr>
+                  <td><strong>{adm.name}</strong></td>
+                  <td>{adm.email}</td>
+                  <td><code>{adm.whatsapp}</code></td>
+                  <td>
+                    <span class={`badge ${adm.role === 'super_admin' ? 'badge-pink' : 'badge-neutral'}`}>
+                      {adm.role === 'super_admin' ? 'Super Admin' : 'Admin'}
+                    </span>
+                  </td>
+                  <td>
+                    <span class={`badge ${adm.is_active ? 'badge-ok' : 'badge-neutral'}`}>
+                      {adm.is_active ? 'Aktif' : 'Nonaktif'}
+                    </span>
+                  </td>
+                  <td class="text-right">
+                    <form method="POST" style="display:inline;">
+                      <input type="hidden" name="_section" value="admin_user" />
+                      <input type="hidden" name="_action" value="toggle_active" />
+                      <input type="hidden" name="id" value={adm.id} />
+                      <input type="hidden" name="is_active" value={adm.is_active ? 'true' : 'false'} />
+                      <button
+                        type="submit"
+                        class="btn-icon"
+                        title={adm.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                        disabled={adm.id === admin.id}
+                      >
+                        <span class="material-symbols-outlined" aria-hidden="true">
+                          {adm.is_active ? 'toggle_on' : 'toggle_off'}
+                        </span>
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: Template WhatsApp -->
+    <div id="tab-template" class="tab-content" role="tabpanel" style="display: none;">
+      <div class="section-card">
+        <div class="section-card-header">
+          <div>
+            <h3 class="section-title">Template Pesan WhatsApp Default</h3>
+            <p class="section-desc">Digunakan sebagai pesan otomatis saat peserta konfirmasi pembayaran atau saat admin mengirim link tiket.</p>
+          </div>
+        </div>
+
+        <form method="POST" class="settings-form">
+          <input type="hidden" name="_section" value="settings" />
+
+          <div class="form-group">
+            <label for="default_wa_to_admin" class="form-label">
+              Pesan Konfirmasi dari Peserta ke Admin (di Halaman Sukses)
+            </label>
+            <textarea
+              id="default_wa_to_admin"
+              name="default_wa_to_admin"
+              class="form-textarea"
+              rows="4"
+            >{defaultWaToAdmin}</textarea>
+            <div class="placeholder-tags">
+              <span class="tag-label">Placeholder tersedia:</span>
+              <code class="tag">&#123;husband&#125;</code>
+              <code class="tag">&#123;wife&#125;</code>
+              <code class="tag">&#123;event&#125;</code>
+              <code class="tag">&#123;reg_code&#125;</code>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="default_wa_to_user" class="form-label">
+              Pesan Link Tiket dari Admin ke Peserta (Setelah Lunas)
+            </label>
+            <textarea
+              id="default_wa_to_user"
+              name="default_wa_to_user"
+              class="form-textarea"
+              rows="4"
+            >{defaultWaToUser}</textarea>
+            <div class="placeholder-tags">
+              <span class="tag-label">Placeholder tersedia:</span>
+              <code class="tag">&#123;husband&#125;</code>
+              <code class="tag">&#123;wife&#125;</code>
+              <code class="tag">&#123;event&#125;</code>
+              <code class="tag">&#123;reg_code&#125;</code>
+              <code class="tag">&#123;ticket_link&#125;</code>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="default_success_message" class="form-label">
+              Teks Default di Halaman Sukses Pendaftaran
+            </label>
+            <textarea
+              id="default_success_message"
+              name="default_success_message"
+              class="form-textarea"
+              rows="3"
+            >{defaultSuccessMessage}</textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary btn-md">
+              <span class="material-symbols-outlined" aria-hidden="true">save</span>
+              Simpan Pengaturan Template
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal Tambah Rekening -->
+    <div id="modal-rekening" class="modal-backdrop" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title">Tambah Rekening Pembayaran</h3>
+          <button type="button" class="modal-close-btn" data-close="modal-rekening">
+            <span class="material-symbols-outlined" aria-hidden="true">close</span>
+          </button>
+        </div>
+        <form method="POST" class="modal-body">
+          <input type="hidden" name="_section" value="rekening" />
+          <input type="hidden" name="_action" value="create" />
+
+          <div class="form-group">
+            <label for="bank_name" class="form-label">Nama Bank / E-Wallet</label>
+            <input type="text" id="bank_name" name="bank_name" class="form-input" placeholder="BCA / Mandiri / BSI" required />
+          </div>
+
+          <div class="form-group">
+            <label for="account_number" class="form-label">Nomor Rekening</label>
+            <input type="text" id="account_number" name="account_number" class="form-input" placeholder="Contoh: 1234567890" required />
+          </div>
+
+          <div class="form-group">
+            <label for="account_name" class="form-label">Atas Nama (Pemilik)</label>
+            <input type="text" id="account_name" name="account_name" class="form-input" placeholder="Contoh: Yayasan Happy Couple Class" required />
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary btn-sm" data-close="modal-rekening">Batal</button>
+            <button type="submit" class="btn btn-primary btn-sm">Simpan Rekening</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal Tambah Admin -->
+    <div id="modal-admin" class="modal-backdrop" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title">Tambah Admin Baru</h3>
+          <button type="button" class="modal-close-btn" data-close="modal-admin">
+            <span class="material-symbols-outlined" aria-hidden="true">close</span>
+          </button>
+        </div>
+        <form method="POST" class="modal-body">
+          <input type="hidden" name="_section" value="admin_user" />
+          <input type="hidden" name="_action" value="create" />
+
+          <div class="form-group">
+            <label for="admin_name" class="form-label">Nama Lengkap</label>
+            <input type="text" id="admin_name" name="name" class="form-input" placeholder="Nama admin" required />
+          </div>
+
+          <div class="form-group">
+            <label for="admin_email" class="form-label">Email</label>
+            <input type="email" id="admin_email" name="email" class="form-input" placeholder="admin@happycoupleclass.com" required />
+          </div>
+
+          <div class="form-group">
+            <label for="admin_password" class="form-label">Password Sementara</label>
+            <input type="password" id="admin_password" name="password" class="form-input" placeholder="Minimal 8 karakter" minlength="8" required />
+          </div>
+
+          <div class="form-group">
+            <label for="admin_whatsapp" class="form-label">Nomor WhatsApp Aktif</label>
+            <input type="tel" id="admin_whatsapp" name="whatsapp" class="form-input" placeholder="08xxxxxxxxxx" required />
+            <span class="form-help">Nomor ini akan dihubungi peserta saat konfirmasi transfer.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="admin_role" class="form-label">Peran (Role)</label>
+            <select id="admin_role" name="role" class="form-select">
+              <option value="admin">Admin Biasa</option>
+              <option value="super_admin">Super Admin</option>
+            </select>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary btn-sm" data-close="modal-admin">Batal</button>
+            <button type="submit" class="btn btn-primary btn-sm">Buat Akun Admin</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</AdminLayout>
+
+<script>
+  // Tabs switching
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+
+  tabBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.getAttribute('data-tab');
+      tabBtns.forEach((b) => {
+        b.classList.remove('active');
+        b.setAttribute('aria-selected', 'false');
+      });
+      tabContents.forEach((c) => {
+        (c as HTMLElement).style.display = 'none';
+        c.classList.remove('active');
+      });
+
+      btn.classList.add('active');
+      btn.setAttribute('aria-selected', 'true');
+      const target = document.getElementById(targetId || '');
+      if (target) {
+        target.style.display = 'block';
+        target.classList.add('active');
+      }
+    });
+  });
+
+  // Modals
+  const btnAddRek = document.getElementById('btn-add-rekening');
+  const modalRek = document.getElementById('modal-rekening');
+  const btnAddAdm = document.getElementById('btn-add-admin');
+  const modalAdm = document.getElementById('modal-admin');
+
+  btnAddRek?.addEventListener('click', () => {
+    if (modalRek) modalRek.style.display = 'flex';
+  });
+
+  btnAddAdm?.addEventListener('click', () => {
+    if (modalAdm) modalAdm.style.display = 'flex';
+  });
+
+  document.querySelectorAll('[data-close]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const modalId = btn.getAttribute('data-close');
+      const targetModal = document.getElementById(modalId || '');
+      if (targetModal) targetModal.style.display = 'none';
+    });
+  });
+</script>
+
+<style>
+  .settings-container {
+    max-width: 1040px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .page-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 4px 0;
+  }
+
+  .page-desc {
+    font-size: 14px;
+    color: var(--ink-600);
+    margin: 0;
+  }
+
+  .alert {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-radius: var(--radius-md);
+    font-size: 14px;
+  }
+
+  .alert-success {
+    background: var(--ok-bg);
+    color: var(--ok);
+    border: 1px solid rgba(46, 158, 107, 0.2);
+  }
+
+  .alert-danger {
+    background: var(--danger-bg);
+    color: var(--danger);
+    border: 1px solid rgba(214, 69, 69, 0.2);
+  }
+
+  .settings-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 2px;
+  }
+
+  .tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink-600);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .tab-btn:hover {
+    color: var(--ink-900);
+  }
+
+  .tab-btn.active {
+    color: var(--pink-500);
+    border-bottom-color: var(--pink-500);
+    font-weight: 600;
+  }
+
+  .tab-btn .material-symbols-outlined {
+    font-size: 20px;
+  }
+
+  .section-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+
+  .section-card-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 4px 0;
+  }
+
+  .section-desc {
+    font-size: 13px;
+    color: var(--ink-600);
+    margin: 0;
+  }
+
+  .table-responsive {
+    overflow-x: auto;
+  }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  .data-table th {
+    text-align: left;
+    padding: 12px 20px;
+    background: var(--pink-50);
+    color: var(--ink-600);
+    font-weight: 500;
+    font-size: 13px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .data-table td {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+  }
+
+  .data-table tr:last-child td { border-bottom: none; }
+
+  .action-buttons {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .btn-icon {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-600);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .btn-icon:hover:not(:disabled) {
+    background: var(--pink-50);
+    color: var(--pink-500);
+    border-color: var(--pink-200);
+  }
+
+  .btn-icon:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .btn-delete:hover {
+    color: var(--danger);
+    background: var(--danger-bg);
+  }
+
+  .btn-icon .material-symbols-outlined { font-size: 18px; }
+
+  .settings-form {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .form-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-900);
+  }
+
+  .form-input, .form-select, .form-textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 150ms ease;
+  }
+
+  .form-input:focus, .form-select:focus, .form-textarea:focus {
+    border-color: var(--pink-400);
+    box-shadow: 0 0 0 3px var(--pink-100);
+  }
+
+  .form-textarea {
+    resize: vertical;
+    line-height: 1.6;
+  }
+
+  .placeholder-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 12px;
+  }
+
+  .tag-label {
+    color: var(--ink-600);
+  }
+
+  .tag {
+    background: var(--pink-50);
+    color: var(--pink-600);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 11px;
+  }
+
+  .form-help {
+    font-size: 11px;
+    color: var(--ink-400);
+  }
+
+  .form-actions {
+    margin-top: 10px;
+  }
+
+  .text-right { text-align: right; }
+  .text-center { text-align: center; }
+  .py-6 { padding-top: 24px; padding-bottom: 24px; }
+  .text-muted { color: var(--ink-400); }
+
+  /* Modals */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(31, 26, 29, 0.45);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+
+  .modal-card {
+    background: var(--white);
+    border-radius: var(--radius-lg);
+    width: 100%;
+    max-width: 480px;
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+  }
+
+  .modal-header {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .modal-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0;
+  }
+
+  .modal-close-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--ink-400);
+    padding: 4px;
+    display: flex;
+  }
+
+  .modal-body {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 12px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+</style>

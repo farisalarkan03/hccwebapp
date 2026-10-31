@@ -1,0 +1,20 @@
+---
+// Scanner layout for /qrclass - fullscreen PWA layout
+import BaseLayout from './BaseLayout.astro';
+---
+
+<BaseLayout title="QR Class — Happy Couple Class" noindex={true}>
+  <slot name="head" slot="head" />
+  <main id="scanner-main" class="scanner-main">
+    <slot />
+  </main>
+</BaseLayout>
+
+<style>
+  .scanner-main {
+    min-height: 100vh;
+    background: #0f0f0f;
+    display: flex;
+    flex-direction: column;
+  }
+</style>

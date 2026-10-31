@@ -1,0 +1,16 @@
+---
+export const prerender = false;
+
+import ScannerLayout from '../../layouts/ScannerLayout.astro';
+import { requireQrStaff } from '../../lib/auth';
+import { ScannerView } from '../../components/scanner/ScannerView';
+
+const authResult = await requireQrStaff(Astro);
+if (authResult instanceof Response) return authResult;
+
+const { eventId, staffName } = authResult;
+---
+
+<ScannerLayout title="Scanner Kehadiran — QRClass HCC">
+  <ScannerView client:only="react" eventId={eventId} staffName={staffName} />
+</ScannerLayout>

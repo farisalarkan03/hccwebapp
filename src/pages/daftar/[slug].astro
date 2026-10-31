@@ -1,0 +1,268 @@
+---
+export const prerender = false;
+
+import PublicLayout from '../../layouts/PublicLayout.astro';
+import { createServiceClient } from '../../lib/supabase';
+import { formatDateWIB, formatRupiah } from '../../lib/format';
+import { RegistrationFormWrapper } from '../../components/register/RegistrationFormWrapper';
+
+const { slug } = Astro.params;
+if (!slug) return Astro.redirect('/');
+
+const supabase = createServiceClient();
+
+// Fetch event
+const { data: event, error: eventError } = await supabase
+  .from('events')
+  .select('*')
+  .eq('slug', slug)
+  .is('deleted_at', null)
+  .single();
+
+if (eventError || !event) {
+  return Astro.redirect('/');
+}
+
+// Fetch form fields
+const { data: fields } = await supabase
+  .from('form_fields')
+  .select('*')
+  .eq('event_id', event.id)
+  .order('sort_order', { ascending: true });
+
+const formattedFields = (fields || []).map((f) => ({
+  id: f.id,
+  field_key: f.field_key,
+  label: f.label,
+  type: f.type,
+  placeholder: f.placeholder,
+  help_text: f.help_text,
+  is_required: f.is_required,
+  options: f.options as any,
+  validation: f.validation as any,
+  sort_order: f.sort_order,
+}));
+
+const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || '';
+const isOpen = event.status === 'open';
+---
+
+<PublicLayout
+  title={`Pendaftaran: ${event.title} — Happy Couple Class`}
+  description={`Formulir pendaftaran resmi ${event.title}. 1 Pendaftaran berlaku untuk 1 couple (suami & istri).`}
+  noindex={true}
+>
+  <div class="registration-page">
+    <div class="registration-container">
+      <!-- Breadcrumb -->
+      <nav class="reg-breadcrumb" aria-label="Navigasi remah roti">
+        <a href="/">Beranda</a>
+        <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+        <a href={`/event/${event.slug}`}>{event.title}</a>
+        <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+        <span aria-current="page">Formulir Pendaftaran</span>
+      </nav>
+
+      <!-- Event Header Card -->
+      <div class="event-summary-card">
+        <div class="event-summary-badge">
+          <span class="material-symbols-outlined" aria-hidden="true">event</span>
+          <span>Kelas Pernikahan HCC</span>
+        </div>
+        <h1 class="event-summary-title">{event.title}</h1>
+        <div class="event-summary-meta">
+          <span class="summary-meta-item">
+            <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>
+            {formatDateWIB(event.date_start, { showTime: true })}
+          </span>
+          <span class="summary-meta-item">
+            <span class="material-symbols-outlined" aria-hidden="true">location_on</span>
+            {event.location}
+          </span>
+          <span class="summary-meta-item price-badge">
+            <span class="material-symbols-outlined" aria-hidden="true">payments</span>
+            {formatRupiah(event.price_per_couple)} / couple
+          </span>
+        </div>
+      </div>
+
+      <!-- Registration Form / Closed State -->
+      {!isOpen ? (
+        <div class="card closed-card">
+          <span class="material-symbols-outlined closed-icon" aria-hidden="true">event_busy</span>
+          <h2 class="closed-title">Pendaftaran Sedang Tidak Dibuka</h2>
+          <p class="closed-desc">
+            Mohon maaf, pendaftaran untuk kelas ini sedang ditutup atau belum dimulai. Silakan hubungi admin kami untuk informasi batch selanjutnya.
+          </p>
+          <a href={`/event/${event.slug}`} class="btn btn-secondary btn-md mt-4">
+            Kembali ke Detail Kelas
+          </a>
+        </div>
+      ) : (
+        <RegistrationFormWrapper
+          client:load
+          eventId={event.id}
+          eventSlug={event.slug}
+          eventTitle={event.title}
+          pricePerCouple={Number(event.price_per_couple)}
+          fields={formattedFields}
+          turnstileSiteKey={turnstileSiteKey}
+        />
+      )}
+    </div>
+  </div>
+</PublicLayout>
+
+{turnstileSiteKey && (
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+)}
+
+<style>
+  .registration-page {
+    background-color: var(--pink-50);
+    min-height: calc(100vh - 160px);
+    padding: 36px 16px 80px 16px;
+  }
+
+  .registration-container {
+    max-width: 680px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .reg-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ink-600);
+  }
+
+  .reg-breadcrumb a {
+    color: var(--pink-500);
+    text-decoration: none;
+    transition: color 150ms ease;
+  }
+
+  .reg-breadcrumb a:hover {
+    text-decoration: underline;
+  }
+
+  .reg-breadcrumb .material-symbols-outlined {
+    font-size: 16px;
+    color: var(--ink-400);
+  }
+
+  .event-summary-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 24px 28px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .event-summary-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--pink-600);
+    background: var(--pink-50);
+    padding: 4px 10px;
+    border-radius: 4px;
+    align-self: flex-start;
+  }
+
+  .event-summary-badge .material-symbols-outlined {
+    font-size: 16px;
+  }
+
+  .event-summary-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+  }
+
+  .event-summary-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    font-size: 13px;
+    color: var(--ink-600);
+  }
+
+  .summary-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .summary-meta-item .material-symbols-outlined {
+    font-size: 16px;
+    color: var(--ink-400);
+  }
+
+  .price-badge {
+    color: var(--pink-600);
+    font-weight: 600;
+  }
+
+  .price-badge .material-symbols-outlined {
+    color: var(--pink-500);
+  }
+
+  /* Closed card */
+  .closed-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    text-align: center;
+    padding: 48px 24px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .closed-icon {
+    font-size: 48px;
+    color: var(--warn);
+    margin-bottom: 12px;
+  }
+
+  .closed-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 8px 0;
+  }
+
+  .closed-desc {
+    font-size: 14px;
+    color: var(--ink-600);
+    max-width: 460px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  .mt-4 {
+    margin-top: 20px;
+  }
+
+  @media (max-width: 640px) {
+    .event-summary-card {
+      padding: 20px;
+    }
+    .event-summary-title {
+      font-size: 19px;
+    }
+  }
+</style>

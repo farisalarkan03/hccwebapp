@@ -1,0 +1,586 @@
+---
+export const prerender = false;
+
+import { requireAdmin } from '../../lib/auth';
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { createServiceClient } from '../../lib/supabase';
+import { formatDateWIB, formatRupiah } from '../../lib/format';
+
+const authResult = await requireAdmin(Astro);
+if (authResult instanceof Response) return authResult;
+
+const { admin } = authResult;
+
+// Fetch stats safely
+let stats = {
+  activeEvents: 0,
+  totalRegistrations: 0,
+  pendingPayment: 0,
+  paid: 0,
+  attended: 0,
+};
+
+let recentPending: any[] = [];
+let upcomingEvents: any[] = [];
+
+try {
+  const supabase = createServiceClient();
+
+  // Active events count
+  const { count: activeEventsCount } = await supabase
+    .from('events')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'open')
+    .is('deleted_at', null);
+  stats.activeEvents = activeEventsCount || 0;
+
+  // Registrations stats
+  const { data: regStats } = await supabase
+    .from('registrations')
+    .select('payment_status, checkin_at')
+    .is('deleted_at', null);
+
+  if (regStats) {
+    stats.totalRegistrations = regStats.length;
+    stats.pendingPayment = regStats.filter((r) => r.payment_status === 'pending').length;
+    stats.paid = regStats.filter((r) => r.payment_status === 'paid').length;
+    stats.attended = regStats.filter((r) => r.checkin_at !== null).length;
+  }
+
+  // 5 Recent pending registrations
+  const { data: pendingList } = await supabase
+    .from('registrations')
+    .select(`
+      id,
+      reg_code,
+      husband_name,
+      wife_name,
+      whatsapp,
+      created_at,
+      payment_deadline,
+      event_id,
+      events (
+        title,
+        price_per_couple
+      )
+    `)
+    .eq('payment_status', 'pending')
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  recentPending = pendingList || [];
+
+  // Upcoming active events
+  const { data: eventsList } = await supabase
+    .from('events')
+    .select('id, title, slug, date_start, location, quota, status')
+    .eq('status', 'open')
+    .is('deleted_at', null)
+    .order('date_start', { ascending: true })
+    .limit(3);
+
+  upcomingEvents = eventsList || [];
+} catch (e) {
+  console.error('Error loading admin dashboard stats:', e);
+}
+---
+
+<AdminLayout title="Ringkasan" adminName={admin.name} adminRole={admin.role}>
+  <div class="dashboard-container">
+    <!-- Header banner -->
+    <div class="welcome-card">
+      <div class="welcome-text">
+        <h2 class="welcome-title">Selamat Datang, {admin.name}!</h2>
+        <p class="welcome-desc">Berikut adalah ringkasan pendaftaran dan aktivitas Happy Couple Class hari ini.</p>
+      </div>
+      <div class="welcome-actions">
+        <a href="/admin/events/baru" class="btn btn-primary btn-sm">
+          <span class="material-symbols-outlined" aria-hidden="true">add</span>
+          Tambah Event
+        </a>
+      </div>
+    </div>
+
+    <!-- Stats Grid (5 Cards) -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon-wrap stat-icon-pink">
+          <span class="material-symbols-outlined" aria-hidden="true">event</span>
+        </div>
+        <div class="stat-content">
+          <span class="stat-label">Event Aktif</span>
+          <span class="stat-value">{stats.activeEvents}</span>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon-wrap stat-icon-ink">
+          <span class="material-symbols-outlined" aria-hidden="true">group</span>
+        </div>
+        <div class="stat-content">
+          <span class="stat-label">Total Pasangan</span>
+          <span class="stat-value">{stats.totalRegistrations}</span>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon-wrap stat-icon-warn">
+          <span class="material-symbols-outlined" aria-hidden="true">schedule</span>
+        </div>
+        <div class="stat-content">
+          <span class="stat-label">Menunggu Bayar</span>
+          <span class="stat-value text-warn">{stats.pendingPayment}</span>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon-wrap stat-icon-ok">
+          <span class="material-symbols-outlined" aria-hidden="true">payments</span>
+        </div>
+        <div class="stat-content">
+          <span class="stat-label">Lunas</span>
+          <span class="stat-value text-ok">{stats.paid}</span>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon-wrap stat-icon-ok">
+          <span class="material-symbols-outlined" aria-hidden="true">check_circle</span>
+        </div>
+        <div class="stat-content">
+          <span class="stat-label">Hadir di Lokasi</span>
+          <span class="stat-value">{stats.attended}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content Grid -->
+    <div class="content-grid">
+      <!-- 5 Pendaftar Terbaru yang Belum Bayar -->
+      <div class="dashboard-card">
+        <div class="card-header">
+          <div class="card-header-left">
+            <span class="material-symbols-outlined text-warn" aria-hidden="true">pending_actions</span>
+            <h3 class="card-title">Menunggu Konfirmasi Bayar</h3>
+          </div>
+          <span class="badge badge-warn">{recentPending.length} Terbaru</span>
+        </div>
+
+        <div class="card-body">
+          {recentPending.length === 0 ? (
+            <div class="empty-state">
+              <span class="material-symbols-outlined empty-icon" aria-hidden="true">task_alt</span>
+              <p class="empty-title">Tidak ada antrean pembayaran</p>
+              <p class="empty-desc">Semua peserta terkonfirmasi atau belum ada pendaftar baru.</p>
+            </div>
+          ) : (
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Kode</th>
+                    <th>Nama Pasangan</th>
+                    <th>Event</th>
+                    <th>Waktu Daftar</th>
+                    <th class="text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentPending.map((item) => (
+                    <tr>
+                      <td>
+                        <span class="reg-code">{item.reg_code}</span>
+                      </td>
+                      <td>
+                        <div class="couple-name">
+                          <span class="husband">{item.husband_name}</span> &amp; <span class="wife">{item.wife_name}</span>
+                        </div>
+                        <span class="wa-num">{item.whatsapp}</span>
+                      </td>
+                      <td>
+                        <span class="event-title">{item.events?.title || '-'}</span>
+                      </td>
+                      <td>
+                        <span class="date-text">{formatDateWIB(item.created_at, { showTime: true })}</span>
+                      </td>
+                      <td class="text-right">
+                        <a
+                          href={`/admin/events/${item.event_id}/peserta`}
+                          class="btn btn-secondary btn-sm"
+                          aria-label={`Konfirmasi pembayaran ${item.reg_code}`}
+                        >
+                          Kelola
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <!-- Event Terdekat -->
+      <div class="dashboard-card">
+        <div class="card-header">
+          <div class="card-header-left">
+            <span class="material-symbols-outlined text-pink" aria-hidden="true">calendar_month</span>
+            <h3 class="card-title">Event Terdekat</h3>
+          </div>
+          <a href="/admin/events" class="card-link">
+            Lihat Semua
+            <span class="material-symbols-outlined icon-sm" aria-hidden="true">arrow_forward</span>
+          </a>
+        </div>
+
+        <div class="card-body">
+          {upcomingEvents.length === 0 ? (
+            <div class="empty-state">
+              <span class="material-symbols-outlined empty-icon" aria-hidden="true">event_busy</span>
+              <p class="empty-title">Belum ada event dibuka</p>
+              <p class="empty-desc">Mulai dengan membuat event Happy Couple Class baru.</p>
+              <a href="/admin/events/baru" class="btn btn-primary btn-sm mt-3">
+                <span class="material-symbols-outlined" aria-hidden="true">add</span>
+                Buat Event Pertama
+              </a>
+            </div>
+          ) : (
+            <div class="event-list">
+              {upcomingEvents.map((ev) => (
+                <div class="event-item">
+                  <div class="event-info">
+                    <h4 class="event-item-title">{ev.title}</h4>
+                    <div class="event-meta">
+                      <span class="meta-item">
+                        <span class="material-symbols-outlined" aria-hidden="true">calendar_today</span>
+                        {formatDateWIB(ev.date_start, { showTime: true })}
+                      </span>
+                      <span class="meta-item">
+                        <span class="material-symbols-outlined" aria-hidden="true">location_on</span>
+                        {ev.location}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="event-actions">
+                    <a href={`/admin/events/${ev.id}/peserta`} class="btn btn-secondary btn-sm">
+                      Peserta
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  </div>
+</AdminLayout>
+
+<style>
+  .dashboard-container {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .welcome-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 24px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .welcome-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 4px 0;
+    letter-spacing: -0.01em;
+  }
+
+  .welcome-desc {
+    font-size: 14px;
+    color: var(--ink-600);
+    margin: 0;
+  }
+
+  /* Stats Grid */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+  }
+
+  .stat-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .stat-icon-wrap {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .stat-icon-pink { background: var(--pink-100); color: var(--pink-500); }
+  .stat-icon-ink { background: #f0edf0; color: var(--ink-900); }
+  .stat-icon-warn { background: var(--warn-bg); color: var(--warn); }
+  .stat-icon-ok { background: var(--ok-bg); color: var(--ok); }
+
+  .stat-icon-wrap .material-symbols-outlined { font-size: 24px; }
+
+  .stat-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .stat-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-600);
+  }
+
+  .stat-value {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--ink-900);
+    line-height: 1.2;
+  }
+
+  .text-warn { color: var(--warn); }
+  .text-ok { color: var(--ok); }
+  .text-pink { color: var(--pink-500); }
+
+  /* Content Grid */
+  .content-grid {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 24px;
+  }
+
+  .dashboard-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .card-header {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--white);
+  }
+
+  .card-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .card-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0;
+  }
+
+  .card-link {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--pink-500);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .card-link:hover { text-decoration: underline; }
+  .icon-sm { font-size: 16px; }
+
+  .card-body {
+    padding: 20px 24px;
+    flex: 1;
+  }
+
+  /* Table */
+  .table-responsive {
+    overflow-x: auto;
+    margin: -8px -24px -20px -24px;
+  }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .data-table th {
+    text-align: left;
+    padding: 10px 16px;
+    background: var(--pink-50);
+    color: var(--ink-600);
+    font-weight: 500;
+    font-size: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .data-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink-900);
+    vertical-align: middle;
+  }
+
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background-color: #faf7f8; }
+
+  .reg-code {
+    font-family: monospace;
+    font-weight: 600;
+    color: var(--pink-600);
+    background: var(--pink-50);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .couple-name {
+    font-weight: 500;
+    color: var(--ink-900);
+  }
+
+  .wa-num {
+    display: block;
+    font-size: 11px;
+    color: var(--ink-400);
+  }
+
+  .event-title {
+    color: var(--ink-600);
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+  }
+
+  .date-text {
+    font-size: 12px;
+    color: var(--ink-600);
+  }
+
+  .text-right { text-align: right; }
+
+  /* Event List */
+  .event-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .event-item {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    transition: border-color 150ms ease;
+  }
+
+  .event-item:hover {
+    border-color: var(--pink-200);
+  }
+
+  .event-item-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 6px 0;
+  }
+
+  .event-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--ink-600);
+  }
+
+  .meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .meta-item .material-symbols-outlined {
+    font-size: 14px;
+    color: var(--ink-400);
+  }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 32px 16px;
+  }
+
+  .empty-icon {
+    font-size: 40px;
+    color: var(--ink-400);
+    margin-bottom: 8px;
+  }
+
+  .empty-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 4px 0;
+  }
+
+  .empty-desc {
+    font-size: 13px;
+    color: var(--ink-600);
+    margin: 0;
+  }
+
+  .mt-3 { margin-top: 12px; }
+
+  @media (max-width: 960px) {
+    .content-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .welcome-card {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 16px;
+    }
+  }
+</style>

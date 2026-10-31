@@ -1,0 +1,15 @@
+---
+export const prerender = false;
+
+// Clear auth cookies
+Astro.response.headers.append(
+  'Set-Cookie',
+  'sb-access-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax'
+);
+Astro.response.headers.append(
+  'Set-Cookie',
+  'sb-refresh-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax'
+);
+
+return Astro.redirect('/admin/login');
+---

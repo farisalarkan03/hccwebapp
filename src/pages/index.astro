@@ -1,0 +1,1343 @@
+---
+export const prerender = false;
+
+import PublicLayout from '../layouts/PublicLayout.astro';
+import { supabase } from '../lib/supabase';
+import { formatDateWIB, formatRupiah } from '../lib/format';
+
+let settingsMap: Record<string, any> = {};
+let activeEvents: any[] = [];
+let blogPages: any[] = [];
+
+try {
+  const { data: settingsList } = await supabase.from('site_settings').select('*');
+  settingsList?.forEach((s) => { settingsMap[s.key] = s.value; });
+
+  const { data: eventsList } = await supabase
+    .from('events')
+    .select(`id, title, slug, description, flyer_url, date_start, location, price_per_couple, quota, status, categories (name)`)
+    .eq('status', 'open')
+    .eq('show_on_landing', true)
+    .is('deleted_at', null)
+    .order('date_start', { ascending: true })
+    .limit(3);
+
+  if (eventsList && eventsList.length > 0) activeEvents = eventsList;
+
+  // Fetch published pages to show as blog/inspiration
+  const { data: pages } = await supabase
+    .from('pages')
+    .select('id, title, slug, summary, cover_url, published_at, created_at')
+    .eq('status', 'published')
+    .is('deleted_at', null)
+    .order('published_at', { ascending: false, nullsFirst: false })
+    .limit(3);
+
+  if (pages && pages.length > 0) blogPages = pages;
+} catch (err) {
+  console.warn('Supabase query error:', err);
+}
+
+// Only use stats if actually present in site_settings (no made up numbers)
+const statAlumni = settingsMap['stat_alumni'];
+const statCities = settingsMap['stat_cities'];
+const statSatisfaction = settingsMap['stat_satisfaction'];
+const statBatches = settingsMap['stat_batches'];
+const hasRealStats = Boolean(statAlumni || statCities || statSatisfaction || statBatches);
+
+const waNumber = settingsMap['whatsapp_number'] || '';
+const waUrl = waNumber 
+  ? `https://wa.me/${waNumber.replace(/[^0-9]/g, '')}` 
+  : 'https://wa.me/628123456789';
+
+function getDayNum(dateStr: string) {
+  try {
+    return new Date(dateStr).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric' });
+  } catch {
+    return '';
+  }
+}
+
+function getMonthShort(dateStr: string) {
+  try {
+    return new Date(dateStr).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', month: 'short' }).toUpperCase();
+  } catch {
+    return '';
+  }
+}
+---
+
+<PublicLayout
+  title="Happy Couple Class — Tempat Belajar Mencintai dengan Ilmu"
+  description="Happy Couple Class adalah kelas pernikahan berbasis Islam yang membekali pasangan dengan ilmu syariat, komunikasi suami istri, dan panduan keluarga sakinah."
+>
+
+  <!-- =================== 1. HERO =================== -->
+  <section class="hero-section">
+    <div class="container">
+      <div class="hero-grid">
+        <!-- Kiri: Teks -->
+        <div class="hero-content">
+          <div class="hero-eyebrow">
+            <span class="material-symbols-outlined" aria-hidden="true">favorite</span>
+            <span>Kelas Pernikahan Berbasis Islam</span>
+          </div>
+          <h1 class="hero-title">
+            Tempat belajar <em class="hero-italic">mencintai</em><br />dengan ilmu
+          </h1>
+          <p class="hero-desc">
+            Belajar pernikahan yang sebenarnya bukan hanya soal menikah, melainkan
+            tentang bagaimana menjadi pasangan yang saling mendukung menuju surga.
+            Karena cinta terbaik adalah cinta yang dilandasi ilmu dan takwa.
+          </p>
+          <div class="hero-actions">
+            <a href="#event" class="btn btn-primary btn-lg">
+              <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>
+              Lihat Jadwal Kelas
+            </a>
+            <a href="#tentang" class="btn btn-outline btn-lg">Tentang Kami</a>
+          </div>
+
+          {hasRealStats && (
+            <div class="hero-stats">
+              {statAlumni && (
+                <div class="stat-item">
+                  <span class="stat-val">{statAlumni}</span>
+                  <span class="stat-lbl">Alumni Couple</span>
+                </div>
+              )}
+              {statCities && (
+                <div class="stat-item">
+                  <span class="stat-val">{statCities}</span>
+                  <span class="stat-lbl">Kota &amp; Daerah</span>
+                </div>
+              )}
+              {statBatches && (
+                <div class="stat-item">
+                  <span class="stat-val">{statBatches}</span>
+                  <span class="stat-lbl">Batch Terlaksana</span>
+                </div>
+              )}
+              {statSatisfaction && (
+                <div class="stat-item">
+                  <span class="stat-val">{statSatisfaction}</span>
+                  <span class="stat-lbl">Tingkat Kepuasan</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <!-- Kanan: Visual Card -->
+        <div class="hero-visual">
+          <div class="hero-card-backdrop" aria-hidden="true"></div>
+          <div class="hero-photo-card">
+            <img
+              src="/img/hero-couple.jpg"
+              alt="Suasana kelas pernikahan islami Happy Couple Class"
+              class="hero-photo"
+              width="480"
+              height="600"
+              loading="eager"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== 2. QUOTE BANNER =================== -->
+  <section class="quote-section" aria-label="Kutipan inspirasi">
+    <div class="container quote-inner">
+      <span class="material-symbols-outlined quote-icon" aria-hidden="true">format_quote</span>
+      <blockquote class="quote-text">
+        "Tempat belajar mencintai dengan ilmu, semoga kelas ini menjadi jalan terbuka
+        bagi kita untuk belajar menjadi suami dan istri yang saling mencintai, kelak
+        di surgaNya."
+      </blockquote>
+      <cite class="quote-author">— Tim Happy Couple Class</cite>
+    </div>
+  </section>
+
+  <!-- =================== 3. 3 FONDASI =================== -->
+  <section id="tentang" class="fondasi-section">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Apa Itu HCC?</span>
+        <h2 class="section-title">3 Fondasi <em class="italic-pink">pernikahan yang bahagia</em></h2>
+        <p class="section-subtitle">
+          Kurikulum Happy Couple Class dibangun di atas tiga pilar utama yang menjadi
+          fondasi pernikahan islami yang kokoh dan harmonis.
+        </p>
+      </div>
+
+      <div class="fondasi-grid">
+        <div class="fondasi-card">
+          <div class="icon-box">
+            <span class="material-symbols-outlined" aria-hidden="true">handshake</span>
+          </div>
+          <span class="fondasi-num">01 — COMMITMENT</span>
+          <h3 class="fondasi-title">Commitment</h3>
+          <p class="fondasi-desc">
+            Membangun komitmen yang kuat sebagai landasan pernikahan islami.
+            Belajar tentang hak, kewajiban, dan janji suci yang harus dijaga seumur hidup
+            berlandaskan Al-Qur'an dan As-Sunnah.
+          </p>
+        </div>
+
+        <div class="fondasi-card">
+          <div class="icon-box">
+            <span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>
+          </div>
+          <span class="fondasi-num">02 — COMMUNICATION</span>
+          <h3 class="fondasi-title">Communication</h3>
+          <p class="fondasi-desc">
+            Mempelajari cara berkomunikasi yang efektif dan penuh empati antara
+            suami dan istri. Termasuk resolusi konflik, kecerdasan emosional, dan
+            pola interaksi yang sehat.
+          </p>
+        </div>
+
+        <div class="fondasi-card">
+          <div class="icon-box">
+            <span class="material-symbols-outlined" aria-hidden="true">favorite</span>
+          </div>
+          <span class="fondasi-num">03 — CONNECTION</span>
+          <h3 class="fondasi-title">Connection</h3>
+          <p class="fondasi-desc">
+            Mempererat ikatan emosional, spiritual, dan fisik antara pasangan.
+            Belajar bagaimana menjadi pasangan yang benar-benar terhubung dalam
+            setiap aspek kehidupan.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== 4. VIDEO SECTION =================== -->
+  <section class="video-section">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Lihat Sendiri</span>
+        <h2 class="section-title">Seperti apa suasana <em class="italic-pink">Happy Couple Class?</em></h2>
+        <p class="section-subtitle">
+          Rasakan sendiri kehangatan, keilmuan, dan kebersamaan yang tercipta
+          di setiap sesi Happy Couple Class melalui video berikut.
+        </p>
+      </div>
+
+      <div class="video-wrapper">
+        <!-- YouTube Facade: fast, lightweight, zero initial iframe load -->
+        <div
+          class="video-facade"
+          id="yt-facade"
+          data-video-id="n2gCH72CH_8"
+          role="region"
+          aria-label="Pemutar video YouTube suasana kelas"
+        >
+          <img
+            src="https://img.youtube.com/vi/n2gCH72CH_8/hqdefault.jpg"
+            alt="Thumbnail Suasana Happy Couple Class bersama Kak Suhe"
+            class="facade-img"
+            loading="lazy"
+          />
+          <button
+            type="button"
+            class="facade-play-btn"
+            id="facade-play-btn"
+            aria-label="Putar video suasana Happy Couple Class"
+          >
+            <span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>
+          </button>
+        </div>
+
+        <div class="video-meta">
+          <span class="video-label">
+            <span class="material-symbols-outlined" aria-hidden="true">play_circle</span>
+            <span>Suasana Happy Couple Class bersama Kak Suhe</span>
+          </span>
+          <a
+            href="https://www.youtube.com/watch?v=n2gCH72CH_8"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="video-yt-link"
+          >
+            <span>Tonton di YouTube</span>
+            <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== 5. EVENTS / JADWAL =================== -->
+  <section id="event" class="events-section">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Jadwal</span>
+        <h2 class="section-title">Jadwal kelas <em class="italic-pink">terdekat</em></h2>
+        <p class="section-subtitle">
+          1 Pendaftaran berlaku untuk 1 couple (suami &amp; istri). Kuota terbatas untuk menjaga kualitas interaksi.
+        </p>
+      </div>
+
+      {activeEvents.length === 0 ? (
+        <div class="empty-events-card">
+          <span class="material-symbols-outlined empty-icon" aria-hidden="true">event_available</span>
+          <h3 class="empty-title">Nantikan Jadwal Batch Selanjutnya</h3>
+          <p class="empty-desc">
+            Saat ini seluruh kelas sedang penuh atau dalam persiapan batch baru.
+            Pantau Instagram kami @happycoupleclass untuk informasi jadwal terbaru.
+          </p>
+          <a
+            href="https://instagram.com/happycoupleclass"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-secondary btn-md mt-4"
+          >
+            Ikuti Instagram HCC
+          </a>
+        </div>
+      ) : (
+        <div class={`events-container ${activeEvents.length === 1 ? 'events-single' : 'events-grid'}`}>
+          {activeEvents.map((ev) => (
+            <article class="event-card-item">
+              <!-- Kiri: Blok Tanggal atau Flyer -->
+              {ev.flyer_url ? (
+                <div class="event-thumb-wrap">
+                  <img src={ev.flyer_url} alt={ev.title} class="event-thumb-img" loading="lazy" />
+                </div>
+              ) : (
+                <div class="event-date-box" aria-label={`Tanggal ${formatDateWIB(ev.date_start, { showTime: false })}`}>
+                  <span class="date-box-month">{getMonthShort(ev.date_start)}</span>
+                  <span class="date-box-day">{getDayNum(ev.date_start)}</span>
+                </div>
+              )}
+
+              <!-- Tengah: Konten & Meta -->
+              <div class="event-info-col">
+                <div class="event-badges-row">
+                  <span class="badge-status-open">Pendaftaran Dibuka</span>
+                  {ev.categories?.name && (
+                    <span class="badge-category">{ev.categories.name}</span>
+                  )}
+                </div>
+                <h3 class="event-card-title">
+                  <a href={`/event/${ev.slug}`}>{ev.title}</a>
+                </h3>
+                <div class="event-meta-rows">
+                  <div class="meta-row">
+                    <span class="material-symbols-outlined" aria-hidden="true">schedule</span>
+                    <span>{formatDateWIB(ev.date_start, { showTime: true })}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="material-symbols-outlined" aria-hidden="true">location_on</span>
+                    <span>{ev.location}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Kanan: Harga & Tombol -->
+              <div class="event-action-col">
+                <div class="event-price-box">
+                  <span class="price-label">Harga per couple</span>
+                  <span class="price-amount">{formatRupiah(ev.price_per_couple)}</span>
+                  {ev.quota && (
+                    <span class="seat-badge">Kuota: {ev.quota} couple</span>
+                  )}
+                </div>
+                <div class="event-btn-group">
+                  <a href={`/event/${ev.slug}`} class="btn btn-secondary btn-md">
+                    Detail
+                  </a>
+                  <a href={`/daftar/${ev.slug}`} class="btn btn-primary btn-md">
+                    Daftar
+                  </a>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      <div class="events-cta-row">
+        <a href="/event" class="btn btn-outline btn-md">
+          <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>
+          Lihat Semua Jadwal
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== 6. BLOG / TULISAN (Hanya tampil jika ada isi) =================== -->
+  {blogPages.length > 0 && (
+    <section class="blog-section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Artikel</span>
+          <h2 class="section-title">Tulisan &amp; <em class="italic-pink">inspirasi pernikahan</em></h2>
+          <p class="section-subtitle">
+            Kumpulan tulisan, renungan, dan panduan seputar pernikahan islami untuk
+            menguatkan iman dan cinta dalam rumah tangga.
+          </p>
+        </div>
+
+        <div class="blog-grid">
+          {blogPages.map((page) => (
+            <a href={`/p/${page.slug}`} class="blog-card">
+              {page.cover_url ? (
+                <div class="blog-card-img-wrap">
+                  <img src={page.cover_url} alt={page.title} loading="lazy" />
+                </div>
+              ) : (
+                <div class="blog-card-placeholder">
+                  <span class="material-symbols-outlined" aria-hidden="true">article</span>
+                </div>
+              )}
+              <div class="blog-card-body">
+                <h3 class="blog-card-title">{page.title}</h3>
+                {page.summary && <p class="blog-card-excerpt">{page.summary}</p>}
+                <div class="blog-card-footer">
+                  {page.published_at && (
+                    <span class="blog-date">{formatDateWIB(page.published_at, { showTime: false })}</span>
+                  )}
+                  <span class="blog-card-read">Baca selengkapnya →</span>
+                </div>
+              </div>
+            </a>
+          ))}
+        </div>
+
+        <div class="events-cta-row">
+          <a href="/p" class="btn btn-outline btn-md">
+            <span class="material-symbols-outlined" aria-hidden="true">article</span>
+            Lihat Semua Tulisan
+          </a>
+        </div>
+      </div>
+    </section>
+  )}
+
+  <!-- =================== 7. CTA PENUTUP (Kartu Terkurung) =================== -->
+  <section class="cta-section">
+    <div class="container">
+      <div class="cta-card">
+        <!-- Bentuk dekoratif lembut di sudut kartu di belakang teks -->
+        <div class="cta-decor-circle cta-decor-left" aria-hidden="true"></div>
+        <div class="cta-decor-circle cta-decor-right" aria-hidden="true"></div>
+
+        <div class="cta-content">
+          <span class="section-tag">Siap Bergabung?</span>
+          <h2 class="cta-title">
+            Siap belajar mencintai <em class="italic-pink">dengan ilmu?</em>
+          </h2>
+          <p class="cta-desc">
+            Bergabunglah bersama ratusan pasangan yang telah mengambil langkah terbaik
+            untuk pernikahan mereka. Daftarkan diri sekarang dan jadilah bagian dari
+            keluarga besar Happy Couple Class.
+          </p>
+          <div class="cta-actions">
+            <a href="#event" class="btn btn-primary btn-lg">
+              <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>
+              Daftar Sekarang
+            </a>
+            <a
+              href={waUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="btn btn-secondary btn-lg"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true">chat</span>
+              Tanya via WhatsApp
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</PublicLayout>
+
+<script>
+  // YouTube Facade activation
+  const facade = document.getElementById('yt-facade');
+  const playBtn = document.getElementById('facade-play-btn');
+
+  function loadYouTubeIframe() {
+    if (!facade) return;
+    const vidId = facade.getAttribute('data-video-id') || 'n2gCH72CH_8';
+    facade.innerHTML = `
+      <iframe
+        src="https://www.youtube.com/embed/${vidId}?autoplay=1&rel=0&modestbranding=1"
+        title="Suasana Happy Couple Class bersama Kak Suhe"
+        frameborder="0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowfullscreen
+        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; border-radius: inherit;"
+      ></iframe>
+    `;
+    facade.classList.add('is-playing');
+  }
+
+  if (facade && playBtn) {
+    playBtn.addEventListener('click', loadYouTubeIframe);
+    facade.addEventListener('click', (e) => {
+      if (e.target !== playBtn && !facade.classList.contains('is-playing')) {
+        loadYouTubeIframe();
+      }
+    });
+  }
+</script>
+
+<style>
+  /* =========================================
+     1. HERO SECTION (Desktop 2-col, Mobile 1-col)
+  ========================================= */
+  .hero-section {
+    padding-top: 64px;
+    padding-bottom: 80px;
+    background: var(--white);
+  }
+
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 56px;
+    align-items: center;
+  }
+
+  .hero-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .hero-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    background: var(--pink-100);
+    color: var(--pink-700);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 20px;
+  }
+
+  .hero-eyebrow .material-symbols-outlined {
+    font-size: 20px;
+    color: var(--pink-700);
+  }
+
+  .hero-title {
+    font-size: clamp(2rem, 1rem + 3.5vw, 3.5rem);
+    line-height: 1.15;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 20px 0;
+    letter-spacing: -0.02em;
+  }
+
+  .hero-italic {
+    font-style: italic;
+    color: var(--pink-600);
+  }
+
+  .hero-desc {
+    font-size: 16px;
+    line-height: 1.75;
+    color: var(--ink-700);
+    max-width: 60ch;
+    margin: 0 0 32px 0;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .hero-stats {
+    display: flex;
+    gap: 28px;
+    margin-top: 40px;
+    padding-top: 28px;
+    border-top: 1px solid var(--line);
+  }
+
+  .stat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .stat-val {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--pink-600);
+  }
+
+  .stat-lbl {
+    font-size: 12px;
+    color: var(--ink-600);
+    font-weight: 500;
+  }
+
+  /* Hero Visual Card */
+  .hero-visual {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .hero-card-backdrop {
+    position: absolute;
+    width: 90%;
+    height: 92%;
+    background-color: var(--pink-100);
+    border-radius: var(--radius-xl);
+    transform: rotate(3deg);
+    z-index: 1;
+  }
+
+  .hero-photo-card {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    max-width: 440px;
+    aspect-ratio: 4 / 5;
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+    border: 4px solid var(--white);
+    background-color: var(--pink-50);
+  }
+
+  .hero-photo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* =========================================
+     2. QUOTE BANNER
+  ========================================= */
+  .quote-section {
+    background: var(--pink-50);
+    padding: 64px 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .quote-inner {
+    max-width: 720px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .quote-icon {
+    font-size: 48px;
+    color: var(--pink-200);
+    line-height: 1;
+  }
+
+  .quote-text {
+    font-size: 22px;
+    line-height: 1.5;
+    font-weight: 500;
+    font-style: italic;
+    color: var(--ink-900);
+    margin: 0;
+  }
+
+  .quote-author {
+    font-size: 14px;
+    color: var(--ink-600);
+    font-style: normal;
+    font-weight: 500;
+  }
+
+  /* =========================================
+     3. 3 FONDASI
+  ========================================= */
+  .fondasi-section {
+    padding: var(--section-y) 0;
+    background: var(--white);
+  }
+
+  .fondasi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+    align-items: stretch;
+  }
+
+  .fondasi-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 32px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transition: transform 200ms ease, box-shadow 200ms ease;
+  }
+
+  .fondasi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .fondasi-num {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--pink-700);
+    text-transform: uppercase;
+  }
+
+  .fondasi-title {
+    font-size: 20px;
+    line-height: 28px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0;
+  }
+
+  .fondasi-desc {
+    font-size: 15px;
+    line-height: 26px;
+    color: var(--ink-700);
+    margin: 0;
+  }
+
+  /* =========================================
+     4. VIDEO SECTION
+  ========================================= */
+  .video-section {
+    padding: var(--section-y) 0;
+    background: var(--pink-50);
+  }
+
+  .video-wrapper {
+    max-width: 880px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .video-facade {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+    background-color: var(--ink-900);
+    cursor: pointer;
+  }
+
+  .facade-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 300ms ease;
+  }
+
+  .video-facade:hover .facade-img {
+    transform: scale(1.02);
+  }
+
+  .facade-play-btn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    background: var(--pink-600);
+    color: var(--white);
+    border: none;
+    box-shadow: 0 8px 24px rgba(194, 54, 106, 0.4);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 180ms ease;
+  }
+
+  .facade-play-btn .material-symbols-outlined {
+    font-size: 36px;
+    color: var(--white);
+    margin-left: 2px;
+  }
+
+  .facade-play-btn:hover {
+    transform: translate(-50%, -50%) scale(1.08);
+    background: var(--pink-700);
+  }
+
+  .video-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .video-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink-700);
+  }
+
+  .video-label .material-symbols-outlined {
+    font-size: 20px;
+    color: var(--pink-600);
+  }
+
+  .video-yt-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--pink-600);
+    text-decoration: none;
+    transition: color 150ms ease;
+  }
+
+  .video-yt-link:hover {
+    color: var(--pink-700);
+  }
+
+  .video-yt-link .material-symbols-outlined {
+    font-size: 18px;
+    color: var(--pink-600);
+  }
+
+  /* =========================================
+     5. EVENTS / JADWAL SECTION
+  ========================================= */
+  .events-section {
+    padding: var(--section-y) 0;
+    background: var(--white);
+  }
+
+  .events-container {
+    width: 100%;
+  }
+
+  .events-single {
+    max-width: 880px;
+    margin: 0 auto;
+  }
+
+  .events-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px;
+  }
+
+  .event-card-item {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: 24px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 24px;
+    align-items: center;
+    transition: transform 150ms ease, box-shadow 150ms ease;
+  }
+
+  .event-card-item:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+
+  /* Date box (72x72px, --pink-100, month 12px uppercase --pink-700, day 28px --ink-900) */
+  .event-date-box {
+    width: 72px;
+    height: 72px;
+    border-radius: var(--radius-md);
+    background-color: var(--pink-100);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .date-box-month {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--pink-700);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1;
+  }
+
+  .date-box-day {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--ink-900);
+    line-height: 1.1;
+    margin-top: 2px;
+  }
+
+  .event-thumb-wrap {
+    width: 80px;
+    height: 80px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .event-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .event-info-col {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .event-badges-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .badge-status-open {
+    display: inline-flex;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ok);
+    background-color: var(--ok-bg);
+    padding: 2px 10px;
+    border-radius: var(--radius-sm);
+  }
+
+  .badge-category {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-600);
+    background: var(--pink-50);
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+  }
+
+  .event-card-title {
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.35;
+    margin: 0;
+  }
+
+  .event-card-title a {
+    color: var(--ink-900);
+    text-decoration: none;
+    transition: color 150ms ease;
+  }
+
+  .event-card-title a:hover {
+    color: var(--pink-600);
+  }
+
+  .event-meta-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+  }
+
+  .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--ink-600);
+  }
+
+  .meta-row .material-symbols-outlined {
+    font-size: 20px;
+    color: var(--pink-600);
+    flex-shrink: 0;
+  }
+
+  .event-action-col {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+
+  .event-price-box {
+    text-align: right;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .price-label {
+    font-size: 12px;
+    color: var(--ink-600);
+  }
+
+  .price-amount {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--pink-600);
+    line-height: 1.1;
+  }
+
+  .seat-badge {
+    font-size: 12px;
+    color: var(--ink-600);
+    font-weight: 500;
+  }
+
+  .event-btn-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .empty-events-card {
+    background: var(--pink-50);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 48px 24px;
+    text-align: center;
+    max-width: 580px;
+    margin: 0 auto;
+  }
+
+  .empty-icon {
+    font-size: 32px;
+    color: var(--pink-700);
+    margin-bottom: 12px;
+  }
+
+  .empty-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 8px 0;
+  }
+
+  .empty-desc {
+    font-size: 14px;
+    color: var(--ink-600);
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .mt-4 {
+    margin-top: 20px;
+  }
+
+  .events-cta-row {
+    display: flex;
+    justify-content: center;
+    margin-top: 40px;
+  }
+
+  /* =========================================
+     6. BLOG / TULISAN SECTION
+  ========================================= */
+  .blog-section {
+    padding: var(--section-y) 0;
+    background: var(--pink-50);
+  }
+
+  .blog-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+  }
+
+  .blog-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    color: inherit;
+    box-shadow: var(--shadow-sm);
+    transition: transform 180ms ease, box-shadow 180ms ease;
+  }
+
+  .blog-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .blog-card-img-wrap {
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+  }
+
+  .blog-card-img-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 300ms ease;
+  }
+
+  .blog-card:hover .blog-card-img-wrap img {
+    transform: scale(1.04);
+  }
+
+  .blog-card-placeholder {
+    aspect-ratio: 16 / 9;
+    background: var(--pink-50);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--pink-700);
+  }
+
+  .blog-card-placeholder .material-symbols-outlined {
+    font-size: 32px;
+  }
+
+  .blog-card-body {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 8px;
+  }
+
+  .blog-card-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0;
+    line-height: 1.35;
+  }
+
+  .blog-card-excerpt {
+    font-size: 14px;
+    color: var(--ink-700);
+    line-height: 1.6;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .blog-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+  }
+
+  .blog-date {
+    color: var(--ink-600);
+  }
+
+  .blog-card-read {
+    font-weight: 600;
+    color: var(--pink-600);
+  }
+
+  /* =========================================
+     7. CTA SECTION (Kartu Terkurung)
+  ========================================= */
+  .cta-section {
+    padding: var(--section-y) 0;
+    background: var(--white);
+  }
+
+  .cta-card {
+    position: relative;
+    background: var(--pink-50);
+    border: 1px solid var(--pink-200);
+    border-radius: var(--radius-xl);
+    padding: 64px 32px;
+    overflow: hidden;
+  }
+
+  .cta-decor-circle {
+    position: absolute;
+    width: 280px;
+    height: 280px;
+    border-radius: 50%;
+    background-color: var(--pink-100);
+    opacity: 0.6;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .cta-decor-left {
+    top: -120px;
+    left: -80px;
+  }
+
+  .cta-decor-right {
+    bottom: -120px;
+    right: -80px;
+  }
+
+  .cta-content {
+    position: relative;
+    z-index: 2;
+    text-align: center;
+    max-width: 640px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .cta-title {
+    font-size: clamp(1.75rem, 1.2rem + 2vw, 2.5rem);
+    font-weight: 600;
+    color: var(--ink-900);
+    line-height: 1.25;
+    margin: 0 0 16px 0;
+    letter-spacing: -0.015em;
+  }
+
+  .cta-desc {
+    font-size: 16px;
+    color: var(--ink-700);
+    line-height: 1.75;
+    margin: 0 0 32px 0;
+    max-width: 60ch;
+  }
+
+  .cta-actions {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  /* =========================================
+     RESPONSIVE BREAKPOINTS (375px, 768px, 1280px)
+  ========================================= */
+  @media (max-width: 1024px) {
+    .hero-grid {
+      grid-template-columns: 1fr;
+      gap: 40px;
+    }
+
+    .hero-content {
+      align-items: center;
+      text-align: center;
+    }
+
+    .hero-eyebrow {
+      margin-inline: auto;
+    }
+
+    .hero-actions {
+      justify-content: center;
+    }
+
+    .hero-stats {
+      justify-content: center;
+    }
+
+    .hero-visual {
+      max-width: 360px;
+      margin: 0 auto;
+    }
+
+    .event-card-item {
+      grid-template-columns: 1fr;
+      text-align: left;
+      gap: 16px;
+    }
+
+    .event-action-col {
+      align-items: flex-start;
+      width: 100%;
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+    }
+
+    .event-price-box {
+      text-align: left;
+    }
+
+    .event-btn-group {
+      width: 100%;
+    }
+
+    .event-btn-group .btn {
+      flex: 1;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .hero-section {
+      padding-top: 40px;
+      padding-bottom: 56px;
+    }
+
+    .hero-actions {
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .hero-actions .btn {
+      width: 100%;
+    }
+
+    .quote-section {
+      padding: 48px 0;
+    }
+
+    .quote-text {
+      font-size: 18px;
+    }
+
+    .cta-card {
+      padding: 40px 20px;
+    }
+
+    .cta-actions {
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .cta-actions .btn {
+      width: 100%;
+    }
+  }
+</style>

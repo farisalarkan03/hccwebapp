@@ -1,0 +1,308 @@
+---
+export const prerender = false;
+
+import { requireAdmin } from '../../../lib/auth';
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { createServiceClient } from '../../../lib/supabase';
+import { formatDateWIB } from '../../../lib/format';
+
+const authResult = await requireAdmin(Astro);
+if (authResult instanceof Response) return authResult;
+
+const { admin } = authResult;
+const supabase = createServiceClient();
+
+let message = '';
+let errorMessage = '';
+
+// Handle actions
+if (Astro.request.method === 'POST') {
+  try {
+    const formData = await Astro.request.formData();
+    const action = formData.get('_action') as string;
+    const pageId = formData.get('page_id') as string;
+
+    if (action === 'delete' && pageId) {
+      const { error } = await supabase
+        .from('pages')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', pageId);
+      if (error) throw error;
+      message = 'Halaman berhasil dihapus.';
+    } else if (action === 'toggle_status' && pageId) {
+      const current = formData.get('current_status') as string;
+      const nextStatus = current === 'published' ? 'draft' : 'published';
+      const { error } = await supabase
+        .from('pages')
+        .update({
+          status: nextStatus,
+          published_at: nextStatus === 'published' ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', pageId);
+      if (error) throw error;
+      message = `Status halaman diubah menjadi ${nextStatus}.`;
+    }
+  } catch (err: any) {
+    errorMessage = err.message || 'Gagal memproses aksi halaman.';
+  }
+}
+
+// Fetch pages
+const { data: pagesList } = await supabase
+  .from('pages')
+  .select(`
+    id,
+    title,
+    slug,
+    status,
+    show_on_landing,
+    published_at,
+    created_at,
+    events (title)
+  `)
+  .is('deleted_at', null)
+  .order('sort_order', { ascending: true })
+  .order('created_at', { ascending: false });
+
+const pages = pagesList || [];
+---
+
+<AdminLayout title="Kelola Halaman & Postingan" adminName={admin.name} adminRole={admin.role}>
+  <div class="halaman-container">
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">Halaman &amp; Postingan</h2>
+        <p class="page-desc">Buat landing flyer, artikel edukasi, atau pengumuman dengan editor blok buatan sendiri.</p>
+      </div>
+      <a href="/admin/halaman/baru" class="btn btn-primary btn-sm">
+        <span class="material-symbols-outlined" aria-hidden="true">add</span>
+        Buat Halaman Baru
+      </a>
+    </div>
+
+    {message && (
+      <div class="alert alert-success" role="alert">
+        <span class="material-symbols-outlined" aria-hidden="true">check_circle</span>
+        <span>{message}</span>
+      </div>
+    )}
+
+    {errorMessage && (
+      <div class="alert alert-danger" role="alert">
+        <span class="material-symbols-outlined" aria-hidden="true">error</span>
+        <span>{errorMessage}</span>
+      </div>
+    )}
+
+    <div class="card table-card">
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Judul Halaman</th>
+              <th>Slug URL</th>
+              <th>Event Terkait</th>
+              <th>Status</th>
+              <th>Tampil di Landing</th>
+              <th class="text-right">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pages.length === 0 ? (
+              <tr>
+                <td colspan="6" class="text-center py-8 text-muted">
+                  Belum ada halaman buatan admin. Klik "Buat Halaman Baru" untuk memulai.
+                </td>
+              </tr>
+            ) : (
+              pages.map((p: any) => (
+                <tr>
+                  <td>
+                    <strong>
+                      <a href={`/admin/halaman/${p.id}`} class="title-link">
+                        {p.title}
+                      </a>
+                    </strong>
+                  </td>
+                  <td>
+                    <code class="slug-badge">/p/{p.slug}</code>
+                  </td>
+                  <td>
+                    <span class="event-text">{p.events?.title || '-'}</span>
+                  </td>
+                  <td>
+                    <span class={`badge ${p.status === 'published' ? 'badge-ok' : 'badge-neutral'}`}>
+                      {p.status === 'published' ? 'Diterbitkan' : 'Draft'}
+                    </span>
+                  </td>
+                  <td>
+                    {p.show_on_landing ? (
+                      <span class="badge badge-pink">Ya</span>
+                    ) : (
+                      <span class="text-muted">Tidak</span>
+                    )}
+                  </td>
+                  <td class="text-right">
+                    <div class="action-buttons">
+                      <a href={`/p/${p.slug}`} target="_blank" class="btn-icon" title="Lihat Halaman Publik">
+                        <span class="material-symbols-outlined" aria-hidden="true">visibility</span>
+                      </a>
+                      <a href={`/admin/halaman/${p.id}`} class="btn-icon" title="Edit Blok">
+                        <span class="material-symbols-outlined" aria-hidden="true">edit</span>
+                      </a>
+                      <form method="POST" style="display:inline;">
+                        <input type="hidden" name="_action" value="toggle_status" />
+                        <input type="hidden" name="page_id" value={p.id} />
+                        <input type="hidden" name="current_status" value={p.status} />
+                        <button
+                          type="submit"
+                          class="btn-icon"
+                          title={p.status === 'published' ? 'Tarik ke Draft' : 'Publikasikan'}
+                        >
+                          <span class="material-symbols-outlined" aria-hidden="true">
+                            {p.status === 'published' ? 'unpublished' : 'publish'}
+                          </span>
+                        </button>
+                      </form>
+                      <form method="POST" style="display:inline;" onsubmit="return confirm('Hapus halaman ini?');">
+                        <input type="hidden" name="_action" value="delete" />
+                        <input type="hidden" name="page_id" value={p.id} />
+                        <button type="submit" class="btn-icon btn-delete" title="Hapus">
+                          <span class="material-symbols-outlined" aria-hidden="true">delete</span>
+                        </button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</AdminLayout>
+
+<style>
+  .halaman-container {
+    max-width: 1120px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .page-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 4px 0;
+  }
+
+  .page-desc {
+    font-size: 14px;
+    color: var(--ink-600);
+    margin: 0;
+  }
+
+  .alert {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-radius: var(--radius-md);
+    font-size: 14px;
+  }
+  .alert-success { background: var(--ok-bg); color: var(--ok); border: 1px solid rgba(46, 158, 107, 0.2); }
+  .alert-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(214, 69, 69, 0.2); }
+
+  .table-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+
+  .table-responsive { overflow-x: auto; }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .data-table th {
+    text-align: left;
+    padding: 12px 16px;
+    background: var(--pink-50);
+    color: var(--ink-600);
+    font-weight: 500;
+    font-size: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .data-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink-900);
+    vertical-align: middle;
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+
+  .title-link {
+    color: var(--ink-900);
+    text-decoration: none;
+  }
+  .title-link:hover { color: var(--pink-500); }
+
+  .slug-badge {
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--pink-600);
+    background: var(--pink-50);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .event-text {
+    font-size: 12px;
+    color: var(--ink-600);
+  }
+
+  .action-buttons {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .btn-icon {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-600);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+  .btn-icon:hover { background: var(--pink-50); color: var(--pink-500); border-color: var(--pink-200); }
+  .btn-delete:hover { background: var(--danger-bg); color: var(--danger); }
+  .btn-icon .material-symbols-outlined { font-size: 18px; }
+
+  .text-center { text-align: center; }
+  .py-8 { padding-top: 32px; padding-bottom: 32px; }
+  .text-muted { color: var(--ink-400); }
+  .text-right { text-align: right; }
+</style>

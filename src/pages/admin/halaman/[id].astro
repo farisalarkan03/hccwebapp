@@ -1,0 +1,90 @@
+---
+export const prerender = false;
+
+import { requireAdmin } from '../../../lib/auth';
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { createServiceClient } from '../../../lib/supabase';
+import { PageBlockEditor, type PageData } from '../../../components/admin/PageBlockEditor';
+
+const authResult = await requireAdmin(Astro);
+if (authResult instanceof Response) return authResult;
+
+const { admin } = authResult;
+const { id: pageId } = Astro.params;
+
+if (!pageId || pageId === 'baru') return Astro.redirect('/admin/halaman');
+
+const supabase = createServiceClient();
+
+// Fetch page
+const { data: page, error: pageError } = await supabase
+  .from('pages')
+  .select('*')
+  .eq('id', pageId)
+  .is('deleted_at', null)
+  .single();
+
+if (pageError || !page) return Astro.redirect('/admin/halaman');
+
+// Fetch events list for linking
+const { data: events } = await supabase
+  .from('events')
+  .select('id, title, slug, date_start, location, price_per_couple')
+  .is('deleted_at', null)
+  .order('date_start', { ascending: false });
+
+const eventsList = (events || []).map((e: any) => ({
+  id: e.id,
+  title: e.title,
+  slug: e.slug,
+  date_start: e.date_start,
+  location: e.location,
+  price_per_couple: Number(e.price_per_couple),
+}));
+
+const pageData: PageData = {
+  id: page.id,
+  title: page.title,
+  slug: page.slug,
+  summary: page.summary || '',
+  cover_url: page.cover_url || '',
+  related_event_id: page.related_event_id || '',
+  show_on_landing: page.show_on_landing,
+  status: page.status,
+  blocks: (page.blocks as any) || [],
+};
+---
+
+<AdminLayout title={`Edit Halaman: ${page.title}`} adminName={admin.name} adminRole={admin.role}>
+  <div class="halaman-editor-page">
+    <div class="breadcrumb">
+      <a href="/admin/halaman">Halaman</a>
+      <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+      <span>{page.title}</span>
+    </div>
+
+    <PageBlockEditor
+      client:load
+      initialPage={pageData}
+      eventsList={eventsList}
+    />
+  </div>
+</AdminLayout>
+
+<style>
+  .halaman-editor-page {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ink-600);
+  }
+  .breadcrumb a { color: var(--pink-500); text-decoration: none; }
+  .breadcrumb .material-symbols-outlined { font-size: 16px; }
+</style>

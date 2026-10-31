@@ -1,0 +1,321 @@
+---
+// Navbar component for public pages
+---
+
+<header class="navbar" id="navbar">
+  <div class="container navbar-inner">
+    <!-- Logo -->
+    <a href="/" class="navbar-logo" aria-label="Happy Couple Class - Kembali ke beranda">
+      <img src="/img/logo.png" alt="" class="navbar-logo-img" width="38" height="38" />
+      <div class="navbar-logo-text">
+        <span class="brand-title">Happy Couple</span>
+        <span class="brand-subtitle">Class</span>
+      </div>
+    </a>
+
+    <!-- Desktop Nav -->
+    <nav class="navbar-nav" aria-label="Navigasi utama">
+      <a href="/#tentang" class="nav-link">Tentang</a>
+      <a href="/#event" class="nav-link">Event</a>
+      <a href="/#faq" class="nav-link">FAQ</a>
+    </nav>
+
+    <!-- CTA -->
+    <div class="navbar-cta">
+      <a href="/#event" class="btn btn-primary btn-daftar" id="navbar-daftar-btn">
+        Daftar
+      </a>
+    </div>
+
+    <!-- Mobile hamburger button -->
+    <button
+      class="navbar-hamburger"
+      id="navbar-hamburger"
+      aria-label="Buka menu navigasi"
+      aria-expanded="false"
+      aria-controls="mobile-menu"
+    >
+      <span class="material-symbols-outlined hamburger-icon-open" aria-hidden="true">menu</span>
+      <span class="material-symbols-outlined hamburger-icon-close" aria-hidden="true">close</span>
+    </button>
+  </div>
+
+  <!-- Mobile menu overlay -->
+  <div class="mobile-menu" id="mobile-menu" role="dialog" aria-label="Menu navigasi mobile" hidden>
+    <div class="container mobile-menu-inner">
+      <nav class="mobile-nav" aria-label="Navigasi mobile">
+        <a href="/#tentang" class="mobile-nav-link">Tentang</a>
+        <a href="/#event" class="mobile-nav-link">Event</a>
+        <a href="/#faq" class="mobile-nav-link">FAQ</a>
+      </nav>
+      <div class="mobile-cta-wrap">
+        <a href="/#event" class="btn btn-primary btn-full mobile-nav-cta">Daftar Sekarang</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<script>
+  // Navbar scroll behavior & mobile menu
+  const navbar = document.getElementById('navbar') as HTMLElement;
+  const hamburger = document.getElementById('navbar-hamburger') as HTMLButtonElement;
+  const mobileMenu = document.getElementById('mobile-menu') as HTMLElement;
+
+  if (navbar && hamburger && mobileMenu) {
+    // Sticky navbar shadow on scroll
+    window.addEventListener('scroll', () => {
+      if (window.scrollY > 12) {
+        navbar.classList.add('navbar-scrolled');
+      } else {
+        navbar.classList.remove('navbar-scrolled');
+      }
+    }, { passive: true });
+
+    // Mobile menu toggle
+    hamburger.addEventListener('click', () => {
+      const isOpen = !mobileMenu.hidden;
+      mobileMenu.hidden = isOpen;
+      hamburger.setAttribute('aria-expanded', String(!isOpen));
+      hamburger.classList.toggle('is-active', !isOpen);
+      document.body.style.overflow = isOpen ? '' : 'hidden';
+    });
+
+    // Close mobile menu when a link is clicked
+    mobileMenu.querySelectorAll('a').forEach((link) => {
+      link.addEventListener('click', () => {
+        mobileMenu.hidden = true;
+        hamburger.setAttribute('aria-expanded', 'false');
+        hamburger.classList.remove('is-active');
+        document.body.style.overflow = '';
+      });
+    });
+
+    // Close on Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !mobileMenu.hidden) {
+        mobileMenu.hidden = true;
+        hamburger.setAttribute('aria-expanded', 'false');
+        hamburger.classList.remove('is-active');
+        document.body.style.overflow = '';
+      }
+    });
+  }
+</script>
+
+<style>
+  .navbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    height: 72px;
+    background: var(--white);
+    border-bottom: 1px solid var(--line);
+    transition: box-shadow 200ms ease;
+  }
+
+  .navbar-scrolled {
+    box-shadow: 0 4px 20px rgba(31, 26, 29, 0.06);
+  }
+
+  .navbar-inner {
+    display: flex;
+    align-items: center;
+    height: 72px;
+    gap: 36px;
+  }
+
+  .navbar-logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    flex-shrink: 0;
+  }
+
+  .navbar-logo-img {
+    height: 38px;
+    width: 38px;
+    display: block;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+
+  .navbar-logo-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.15;
+  }
+
+  .brand-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--ink-900);
+    letter-spacing: -0.01em;
+  }
+
+  .brand-subtitle {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--pink-600);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .navbar-nav {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    flex: 1;
+  }
+
+  .nav-link {
+    display: inline-flex;
+    align-items: center;
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--ink-700);
+    text-decoration: none;
+    padding: 8px 0;
+    position: relative;
+    transition: color 150ms ease;
+  }
+
+  .nav-link::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: var(--pink-600);
+    transform: scaleX(0);
+    transition: transform 180ms ease;
+    transform-origin: center;
+  }
+
+  .nav-link:hover,
+  .nav-link:focus-visible {
+    color: var(--pink-600);
+  }
+
+  .nav-link:hover::after,
+  .nav-link:focus-visible::after {
+    transform: scaleX(1);
+  }
+
+  .navbar-cta {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+  }
+
+  .btn-daftar {
+    height: 44px;
+    padding: 0 24px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  /* Hamburger */
+  .navbar-hamburger {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    color: var(--ink-900);
+    cursor: pointer;
+    margin-left: auto;
+  }
+
+  .navbar-hamburger .material-symbols-outlined {
+    font-size: 24px;
+    color: var(--ink-900);
+  }
+
+  .hamburger-icon-close {
+    display: none;
+  }
+
+  .navbar-hamburger.is-active .hamburger-icon-open {
+    display: none;
+  }
+
+  .navbar-hamburger.is-active .hamburger-icon-close {
+    display: block;
+  }
+
+  /* Mobile menu */
+  .mobile-menu {
+    position: fixed;
+    top: 72px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--white);
+    z-index: 49;
+    overflow-y: auto;
+    border-top: 1px solid var(--line);
+  }
+
+  .mobile-menu-inner {
+    padding-top: 28px;
+    padding-bottom: 40px;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 72px);
+  }
+
+  .mobile-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .mobile-nav-link {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--ink-900);
+    padding: 14px 16px;
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    transition: background 150ms ease, color 150ms ease;
+  }
+
+  .mobile-nav-link:hover,
+  .mobile-nav-link:focus-visible {
+    background: var(--pink-50);
+    color: var(--pink-600);
+  }
+
+  .mobile-cta-wrap {
+    margin-top: auto;
+    padding-top: 32px;
+  }
+
+  .mobile-nav-cta {
+    height: 48px;
+    font-size: 16px;
+  }
+
+  @media (max-width: 768px) {
+    .navbar-nav,
+    .navbar-cta {
+      display: none;
+    }
+
+    .navbar-hamburger {
+      display: inline-flex;
+    }
+  }
+
+  @media (min-width: 769px) {
+    .mobile-menu {
+      display: none !important;
+    }
+  }
+</style>

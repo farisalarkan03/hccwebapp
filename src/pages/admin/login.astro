@@ -1,0 +1,441 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { extractCookieValue } from '../../lib/auth';
+import { createClient } from '@supabase/supabase-js';
+
+// If already logged in, redirect to /admin
+const cookieHeader = Astro.request.headers.get('cookie') ?? '';
+const existingToken = extractCookieValue(cookieHeader, 'sb-access-token');
+
+if (existingToken) {
+  const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
+  if (supabaseUrl && supabaseAnonKey) {
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+      global: { headers: { Authorization: `Bearer ${existingToken}` } }
+    });
+    const { data: { user } } = await supabase.auth.getUser(existingToken);
+    if (user) {
+      const { data: admin } = await supabase
+        .from('admins')
+        .select('id')
+        .eq('id', user.id)
+        .eq('is_active', true)
+        .single();
+      if (admin) {
+        return Astro.redirect('/admin');
+      }
+    }
+  }
+}
+
+const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || '';
+const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || '';
+---
+
+<BaseLayout title="Login Admin — Happy Couple Class" noindex={true}>
+  <div class="login-page">
+    <div class="login-container">
+      <div class="login-card">
+        <!-- Logo & Header -->
+        <div class="login-header">
+          <a href="/" class="login-logo-link" aria-label="Beranda Happy Couple Class">
+            <img src="/img/logo.png" alt="" class="login-logo" width="44" height="44" />
+            <div class="login-logo-text">
+              <span class="brand-title">Happy Couple</span>
+              <span class="brand-subtitle">Class</span>
+            </div>
+          </a>
+          <h1 class="login-title">Login Admin</h1>
+          <p class="login-subtitle">Masuk ke panel pengelola Happy Couple Class</p>
+        </div>
+
+        <!-- Alert Notification -->
+        <div id="login-alert" class="alert-box" style="display: none;" role="alert">
+          <span class="material-symbols-outlined alert-icon" aria-hidden="true">error</span>
+          <span id="login-alert-text" class="alert-text"></span>
+        </div>
+
+        <!-- Login Form -->
+        <form id="admin-login-form" class="login-form" novalidate>
+          <div class="form-group">
+            <label for="email" class="form-label">Email</label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              class="form-input"
+              placeholder="admin@happycoupleclass.com"
+              required
+              autocomplete="email"
+            />
+          </div>
+
+          <div class="form-group">
+            <div class="form-label-row">
+              <label for="password" class="form-label">Password</label>
+            </div>
+            <div class="password-input-wrap">
+              <input
+                type="password"
+                id="password"
+                name="password"
+                class="form-input"
+                placeholder="Masukkan kata sandi"
+                required
+                autocomplete="current-password"
+              />
+              <button
+                type="button"
+                id="toggle-password"
+                class="toggle-password-btn"
+                aria-label="Lihat kata sandi"
+              >
+                <span class="material-symbols-outlined" id="toggle-password-icon" aria-hidden="true">visibility</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Turnstile Widget (if configured) -->
+          {turnstileSiteKey && (
+            <div class="turnstile-container">
+              <div class="cf-turnstile" data-sitekey={turnstileSiteKey} data-theme="light"></div>
+            </div>
+          )}
+
+          <button type="submit" id="submit-btn" class="btn btn-primary btn-full login-btn">
+            <span class="btn-text">Masuk ke Dashboard</span>
+            <span class="btn-spinner" style="display: none;" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-dasharray="40" stroke-dashoffset="10"></circle>
+              </svg>
+            </span>
+          </button>
+        </form>
+
+        <div class="login-footer">
+          <a href="/" class="back-link">
+            <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+            Kembali ke Beranda
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+{turnstileSiteKey && (
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+)}
+
+<script>
+  const form = document.getElementById('admin-login-form') as HTMLFormElement | null;
+  const alertBox = document.getElementById('login-alert');
+  const alertText = document.getElementById('login-alert-text');
+  const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement | null;
+  const btnText = submitBtn?.querySelector('.btn-text') as HTMLElement | null;
+  const btnSpinner = submitBtn?.querySelector('.btn-spinner') as HTMLElement | null;
+  const togglePassBtn = document.getElementById('toggle-password');
+  const passInput = document.getElementById('password') as HTMLInputElement | null;
+  const passIcon = document.getElementById('toggle-password-icon');
+
+  // Toggle Password visibility
+  if (togglePassBtn && passInput && passIcon) {
+    togglePassBtn.addEventListener('click', () => {
+      const isPassword = passInput.type === 'password';
+      passInput.type = isPassword ? 'text' : 'password';
+      passIcon.textContent = isPassword ? 'visibility_off' : 'visibility';
+      togglePassBtn.setAttribute('aria-label', isPassword ? 'Sembunyikan kata sandi' : 'Lihat kata sandi');
+    });
+  }
+
+  function showAlert(msg: string) {
+    if (alertText) alertText.textContent = msg;
+    if (alertBox) alertBox.style.display = 'flex';
+  }
+
+  function hideAlert() {
+    if (alertBox) alertBox.style.display = 'none';
+  }
+
+  function setLoading(loading: boolean) {
+    if (!submitBtn) return;
+    submitBtn.disabled = loading;
+    if (loading) {
+      if (btnText) btnText.style.display = 'none';
+      if (btnSpinner) btnSpinner.style.display = 'inline-flex';
+    } else {
+      if (btnText) btnText.style.display = 'inline-block';
+      if (btnSpinner) btnSpinner.style.display = 'none';
+    }
+  }
+
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAlert();
+
+      const emailInput = document.getElementById('email') as HTMLInputElement | null;
+      const email = emailInput?.value.trim() || '';
+      const password = passInput?.value || '';
+
+      if (!email || !password) {
+        showAlert('Mohon isi email dan password.');
+        return;
+      }
+
+      setLoading(true);
+
+      try {
+        const res = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const json = await res.json();
+
+        if (!res.ok) {
+          throw new Error(json.error || 'Gagal masuk.');
+        }
+
+        // Set cookies locally for browser navigation
+        if (json.token) {
+          const maxAge = 7 * 24 * 60 * 60;
+          const secureFlag = location.protocol === 'https:' ? '; Secure' : '';
+          document.cookie = `sb-access-token=${encodeURIComponent(json.token)}; Path=/; Max-Age=${maxAge}; SameSite=Lax${secureFlag}`;
+          if (json.refreshToken) {
+            document.cookie = `sb-refresh-token=${encodeURIComponent(json.refreshToken)}; Path=/; Max-Age=${maxAge}; SameSite=Lax${secureFlag}`;
+          }
+        }
+
+        // Redirect to admin dashboard
+        const urlParams = new URLSearchParams(window.location.search);
+        const redirectUrl = urlParams.get('redirect') || json.redirect || '/admin';
+        window.location.href = redirectUrl;
+
+      } catch (err: any) {
+        showAlert(err.message || 'Terjadi kesalahan sistem saat mencoba masuk.');
+        setLoading(false);
+      }
+    });
+  }
+</script>
+
+<style>
+  .login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--pink-50);
+    padding: 24px 16px;
+  }
+
+  .login-container {
+    width: 100%;
+    max-width: 440px;
+  }
+
+  .login-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    padding: 40px 32px;
+  }
+
+  .login-header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  .login-logo-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    text-decoration: none;
+    text-align: left;
+  }
+
+  .login-logo {
+    height: 44px;
+    width: 44px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+
+  .login-logo-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.15;
+  }
+
+  .brand-title {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--ink-900);
+    letter-spacing: -0.01em;
+  }
+
+  .brand-subtitle {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--pink-600);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .login-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 6px 0;
+    letter-spacing: -0.01em;
+  }
+
+  .login-subtitle {
+    font-size: 14px;
+    color: var(--ink-600);
+    margin: 0;
+  }
+
+  .alert-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--danger-bg);
+    border: 1px solid rgba(214, 69, 69, 0.2);
+    color: var(--danger);
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    margin-bottom: 20px;
+  }
+
+  .alert-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+
+  .login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .form-label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .form-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink-900);
+  }
+
+  .form-input {
+    width: 100%;
+    height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--white);
+    color: var(--ink-900);
+    font-family: 'Poppins', sans-serif;
+    font-size: 14px;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+    box-sizing: border-box;
+  }
+
+  .form-input:focus {
+    outline: none;
+    border-color: var(--pink-400);
+    box-shadow: 0 0 0 3px var(--pink-100);
+  }
+
+  .password-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .password-input-wrap .form-input {
+    padding-right: 42px;
+  }
+
+  .toggle-password-btn {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    color: var(--ink-400);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    border-radius: var(--radius-sm);
+    transition: color 150ms ease;
+  }
+
+  .toggle-password-btn:hover {
+    color: var(--ink-900);
+  }
+
+  .turnstile-container {
+    display: flex;
+    justify-content: center;
+    margin: 4px 0;
+  }
+
+  .login-btn {
+    margin-top: 6px;
+    font-size: 15px;
+    font-weight: 500;
+  }
+
+  .login-footer {
+    margin-top: 28px;
+    text-align: center;
+    border-top: 1px solid var(--line);
+    padding-top: 20px;
+  }
+
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ink-600);
+    text-decoration: none;
+    transition: color 150ms ease;
+  }
+
+  .back-link:hover {
+    color: var(--pink-500);
+  }
+
+  .back-link .material-symbols-outlined {
+    font-size: 16px;
+  }
+
+  @media (max-width: 480px) {
+    .login-card {
+      padding: 32px 20px;
+    }
+  }
+</style>

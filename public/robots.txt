@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /qrclass/
+Disallow: /tiket/
+Disallow: /daftar/*/sukses
+Disallow: /api/
+
+Sitemap: https://happycoupleclass.com/sitemap.xml

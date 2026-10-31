@@ -1,0 +1,320 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { extractCookieValue } from '../../lib/auth';
+import { verifyQrToken } from '../../lib/jwt';
+
+// If already authenticated, redirect to /qrclass/scan
+const cookieHeader = Astro.request.headers.get('cookie') ?? '';
+const qrToken = extractCookieValue(cookieHeader, 'qr-staff-token');
+if (qrToken) {
+  const jwtSecret = import.meta.env.QR_JWT_SECRET || 'default-secret-qr-key-123456789';
+  const payload = await verifyQrToken(qrToken, jwtSecret);
+  if (payload && payload.event_id) {
+    return Astro.redirect('/qrclass/scan');
+  }
+}
+
+const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || '';
+---
+
+<BaseLayout title="Login Pendata — QRClass HCC" noindex={true}>
+  <div class="qr-login-page">
+    <div class="qr-login-card">
+      <div class="qr-brand-header">
+        <div class="qr-logo-icon">
+          <span class="material-symbols-outlined" aria-hidden="true">qr_code_scanner</span>
+        </div>
+        <h1 class="qr-title">QRClass Scanner</h1>
+        <p class="qr-subtitle">Aplikasi pendataan kehadiran hari-H Happy Couple Class</p>
+      </div>
+
+      <div id="login-alert" class="alert-box" style="display: none;" role="alert">
+        <span class="material-symbols-outlined" aria-hidden="true">error</span>
+        <span id="login-alert-text"></span>
+      </div>
+
+      <form id="qr-login-form" class="qr-form" novalidate>
+        <div class="form-group">
+          <label for="event_id" class="form-label">ID Event</label>
+          <input
+            type="text"
+            id="event_id"
+            name="event_id"
+            class="form-input"
+            placeholder="Salin ID Event dari Dashboard Admin"
+            required
+            autocomplete="off"
+          />
+          <span class="form-help">Kode UUID event dari dashboard admin HCC.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="password" class="form-label">Password Scanner</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            class="form-input"
+            placeholder="Masukkan password scanner event"
+            required
+            autocomplete="current-password"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="staff_name" class="form-label">Nama Anda (Opsional)</label>
+          <input
+            type="text"
+            id="staff_name"
+            name="staff_name"
+            class="form-input"
+            placeholder="Contoh: Faris / Meja Registrasi 1"
+          />
+          <span class="form-help">Akan tercatat di log sebagai pencatat kehadiran.</span>
+        </div>
+
+        {turnstileSiteKey && (
+          <div class="turnstile-wrap">
+            <div class="cf-turnstile" data-sitekey={turnstileSiteKey} data-theme="light"></div>
+          </div>
+        )}
+
+        <button type="submit" id="submit-btn" class="btn btn-primary btn-full qr-submit-btn">
+          <span class="btn-text">Masuk &amp; Buka Kamera</span>
+          <span class="btn-spinner" style="display: none;" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-dasharray="40" stroke-dashoffset="10"></circle>
+            </svg>
+          </span>
+        </button>
+      </form>
+
+      <div class="qr-login-footer">
+        <a href="/" class="back-link">
+          <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+          Kembali ke Beranda
+        </a>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+{turnstileSiteKey && (
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+)}
+
+<script>
+  const form = document.getElementById('qr-login-form') as HTMLFormElement;
+  const alertBox = document.getElementById('login-alert');
+  const alertText = document.getElementById('login-alert-text');
+  const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement;
+  const btnText = submitBtn?.querySelector('.btn-text') as HTMLElement;
+  const btnSpinner = submitBtn?.querySelector('.btn-spinner') as HTMLElement;
+
+  function showAlert(msg: string) {
+    if (alertText) alertText.textContent = msg;
+    if (alertBox) alertBox.style.display = 'flex';
+  }
+
+  function hideAlert() {
+    if (alertBox) alertBox.style.display = 'none';
+  }
+
+  function setLoading(loading: boolean) {
+    if (!submitBtn) return;
+    submitBtn.disabled = loading;
+    if (loading) {
+      if (btnText) btnText.style.display = 'none';
+      if (btnSpinner) btnSpinner.style.display = 'inline-flex';
+    } else {
+      if (btnText) btnText.style.display = 'inline-block';
+      if (btnSpinner) btnSpinner.style.display = 'none';
+    }
+  }
+
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideAlert();
+
+    const eventIdInput = document.getElementById('event_id') as HTMLInputElement;
+    const passInput = document.getElementById('password') as HTMLInputElement;
+    const staffInput = document.getElementById('staff_name') as HTMLInputElement;
+
+    const eventId = eventIdInput?.value.trim();
+    const password = passInput?.value.trim();
+    const staffName = staffInput?.value.trim();
+
+    if (!eventId || !password) {
+      showAlert('Mohon isi ID Event dan Password Scanner.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const res = await fetch('/api/qrclass/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_id: eventId,
+          password: password,
+          staff_name: staffName,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(json.error || 'Login gagal.');
+      }
+
+      window.location.href = json.redirect || '/qrclass/scan';
+    } catch (err: any) {
+      showAlert(err.message || 'Terjadi kesalahan sistem.');
+      setLoading(false);
+    }
+  });
+</script>
+
+<style>
+  .qr-login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #181416;
+    padding: 24px 16px;
+  }
+
+  .qr-login-card {
+    background: var(--white);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
+    width: 100%;
+    max-width: 420px;
+    padding: 36px 28px;
+  }
+
+  .qr-brand-header {
+    text-align: center;
+    margin-bottom: 24px;
+  }
+
+  .qr-logo-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius-md);
+    background: var(--pink-50);
+    color: var(--pink-500);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px;
+  }
+
+  .qr-logo-icon .material-symbols-outlined { font-size: 32px; }
+
+  .qr-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 6px 0;
+  }
+
+  .qr-subtitle {
+    font-size: 13px;
+    color: var(--ink-600);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .alert-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--danger-bg);
+    border: 1px solid rgba(214, 69, 69, 0.2);
+    color: var(--danger);
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+
+  .qr-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .form-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-900);
+  }
+
+  .form-input {
+    width: 100%;
+    height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--white);
+    color: var(--ink-900);
+    font-family: inherit;
+    font-size: 14px;
+    box-sizing: border-box;
+    outline: none;
+    transition: border-color 150ms ease;
+  }
+
+  .form-input:focus {
+    border-color: var(--pink-400);
+    box-shadow: 0 0 0 3px var(--pink-100);
+  }
+
+  .form-help {
+    font-size: 11px;
+    color: var(--ink-400);
+  }
+
+  .turnstile-wrap {
+    display: flex;
+    justify-content: center;
+    margin: 4px 0;
+  }
+
+  .qr-submit-btn {
+    height: 48px;
+    font-size: 15px;
+    font-weight: 600;
+    margin-top: 8px;
+  }
+
+  .qr-login-footer {
+    margin-top: 24px;
+    text-align: center;
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+  }
+
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ink-600);
+    text-decoration: none;
+  }
+
+  .back-link:hover { color: var(--pink-500); }
+  .back-link .material-symbols-outlined { font-size: 16px; }
+</style>

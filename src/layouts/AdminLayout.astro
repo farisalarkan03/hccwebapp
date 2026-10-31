@@ -1,0 +1,133 @@
+---
+// Admin layout - used for all /admin/* pages
+import BaseLayout from './BaseLayout.astro';
+import AdminSidebar from '../components/admin/AdminSidebar';
+
+interface Props {
+  title: string;
+  adminName?: string;
+  adminRole?: string;
+}
+
+const { title, adminName = 'Admin', adminRole = 'admin' } = Astro.props;
+const pathname = Astro.url.pathname;
+---
+
+<BaseLayout title={`${title} — Admin HCC`} noindex={true}>
+  <div class="admin-layout">
+    <AdminSidebar
+      client:load
+      adminName={adminName}
+      adminRole={adminRole}
+      pathname={pathname}
+    />
+    <div class="admin-content">
+      <header class="admin-topbar">
+        <div class="admin-topbar-inner">
+          <h1 class="admin-page-title">{title}</h1>
+          <div class="admin-topbar-actions">
+            <span class="admin-greeting">Halo, {adminName}</span>
+            <a href="/admin/logout" class="btn-ghost btn-sm" aria-label="Keluar dari dashboard admin">
+              <span class="material-symbols-outlined" aria-hidden="true">logout</span>
+              Keluar
+            </a>
+          </div>
+        </div>
+      </header>
+      <main id="admin-main" class="admin-main">
+        <slot />
+      </main>
+    </div>
+  </div>
+</BaseLayout>
+
+<style>
+  .admin-layout {
+    display: flex;
+    min-height: 100vh;
+    background-color: var(--pink-50);
+  }
+
+  .admin-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .admin-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--white);
+    border-bottom: 1px solid var(--line);
+    padding: 0 24px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+  }
+
+  .admin-topbar-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 16px;
+  }
+
+  .admin-page-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .admin-topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .admin-greeting {
+    font-size: 14px;
+    color: var(--ink-600);
+  }
+
+  .admin-main {
+    flex: 1;
+    padding: 24px;
+  }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: var(--radius-md);
+    border: none;
+    background: transparent;
+    color: var(--ink-600);
+    font-size: 14px;
+    font-family: 'Poppins', sans-serif;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+    text-decoration: none;
+  }
+
+  .btn-ghost:hover {
+    background: var(--pink-50);
+    color: var(--ink-900);
+  }
+
+  .btn-ghost .material-symbols-outlined {
+    font-size: 18px;
+  }
+
+  @media (max-width: 768px) {
+    .admin-topbar { padding: 0 16px; }
+    .admin-main { padding: 16px; }
+    .admin-greeting { display: none; }
+  }
+</style>

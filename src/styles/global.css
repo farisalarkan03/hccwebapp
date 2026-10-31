@@ -1,0 +1,215 @@
+@import "tailwindcss";
+@import "./tokens.css";
+@import "./components.css";
+
+/* Tailwind v4 CSS-based configuration */
+@theme {
+  --font-sans: 'Poppins', sans-serif;
+
+  --color-white: #FFFFFF;
+  --color-pink-50: #FFF7FA;
+  --color-pink-100: #FDEAF1;
+  --color-pink-200: #F9D3E2;
+  --color-pink-500: #E85D8A;
+  --color-pink-600: #C2366A;
+  --color-pink-700: #A82B58;
+  --color-ink-900: #1F1A1D;
+  --color-ink-700: #4A4047;
+  --color-ink-600: #6B6168;
+  --color-ink-400: #8E848B;
+  --color-line: #F1E4EA;
+  --color-line-strong: #E4CBD6;
+
+  --color-ok: #2E9E6B;
+  --color-ok-bg: #E9F7F0;
+  --warn: #C98A12;
+  --warn-bg: #FFF6DF;
+  --color-danger: #D64545;
+  --color-danger-bg: #FDECEC;
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  --shadow-sm: 0 1px 2px rgba(31, 26, 29, 0.05);
+  --shadow-md: 0 10px 30px rgba(194, 54, 106, 0.08);
+}
+
+/* Base styles */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.75;
+  color: var(--ink-700);
+  background-color: var(--white);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Typography Hierarchy (Section 5) */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Poppins', sans-serif;
+  font-weight: 600;
+  color: var(--ink-900);
+}
+
+h1 {
+  font-size: clamp(2rem, 1rem + 3.5vw, 3.5rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: clamp(1.5rem, 1rem + 1.8vw, 2.25rem);
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+
+h3 {
+  font-size: 20px;
+  line-height: 28px;
+}
+
+p {
+  color: var(--ink-700);
+  line-height: 1.75;
+  max-width: 65ch;
+}
+
+a {
+  color: var(--pink-600);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+a:hover {
+  color: var(--pink-700);
+}
+
+/* Italic accent words */
+em, .italic-pink {
+  font-style: italic;
+  color: var(--pink-600);
+}
+
+/* Focus styles (Section 8) */
+:focus-visible {
+  outline: 2px solid var(--pink-600);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Container */
+.container {
+  width: 100%;
+  max-width: var(--container);
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding-inline: 20px;
+  }
+}
+
+/* Section spacing */
+.section {
+  padding-block: var(--section-y);
+}
+
+/* Section Header Shared */
+.section-header {
+  max-width: 640px;
+  margin-inline: auto;
+  margin-bottom: var(--heading-gap);
+  text-align: center;
+}
+
+.section-tag, .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pink-700);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+}
+
+.section-title {
+  margin: 0 0 14px 0;
+}
+
+.section-subtitle {
+  font-size: 17px;
+  line-height: 28px;
+  color: var(--ink-600);
+  margin: 0 auto;
+}
+
+/* Material Symbols (Section 4) */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px; /* Standar tombol & meta: 20px */
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none !important;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  color: inherit;
+}
+
+/* Icon Box (Section 4: 48x48px, radius-md, --pink-100, icon 24px --pink-700) */
+.icon-box {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  background-color: var(--pink-100);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.icon-box .material-symbols-outlined {
+  font-size: 24px;
+  color: var(--pink-700);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--pink-50); }
+::-webkit-scrollbar-thumb { background: var(--pink-200); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--pink-500); }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

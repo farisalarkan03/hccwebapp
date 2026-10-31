@@ -1,0 +1,180 @@
+---
+export const prerender = false;
+
+import { requireAdmin } from '../../../../lib/auth';
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { createServiceClient } from '../../../../lib/supabase';
+import { PesertaTable, type ParticipantItem } from '../../../../components/admin/PesertaTable';
+
+const authResult = await requireAdmin(Astro);
+if (authResult instanceof Response) return authResult;
+
+const { admin } = authResult;
+const { id: eventId } = Astro.params;
+
+if (!eventId) return Astro.redirect('/admin/events');
+
+const supabase = createServiceClient();
+
+// Fetch event
+const { data: event, error: eventError } = await supabase
+  .from('events')
+  .select('id, title, slug, quota, wa_to_user_template')
+  .eq('id', eventId)
+  .is('deleted_at', null)
+  .single();
+
+if (eventError || !event) return Astro.redirect('/admin/events');
+
+// Fetch registrations
+const { data: registrations } = await supabase
+  .from('registrations')
+  .select(`
+    id,
+    reg_code,
+    ticket_token,
+    husband_name,
+    wife_name,
+    whatsapp,
+    email,
+    payment_status,
+    payment_confirmed_at,
+    payment_confirmed_by,
+    payment_note,
+    payment_proof_url,
+    created_at,
+    checkin_at,
+    checkin_by,
+    wa_sent_at,
+    answers,
+    form_snapshot,
+    admins:admins!registrations_confirmed_by_admin_id_fkey (name)
+  `)
+  .eq('event_id', eventId)
+  .is('deleted_at', null)
+  .order('created_at', { ascending: false });
+
+// Fetch default WA template from settings
+const { data: settingData } = await supabase
+  .from('site_settings')
+  .select('value')
+  .eq('key', 'default_wa_to_user')
+  .single();
+
+const defaultWaTemplate = event.wa_to_user_template || settingData?.value ||
+  'Alhamdulillah, pembayaran pendaftaran {event} untuk {husband} & {wife} telah kami verifikasi.\nBerikut link tiket kedatangan Anda:\n{ticket_link}';
+
+const participants: ParticipantItem[] = (registrations || []).map((r: any) => ({
+  id: r.id,
+  reg_code: r.reg_code,
+  ticket_token: r.ticket_token,
+  husband_name: r.husband_name,
+  wife_name: r.wife_name,
+  whatsapp: r.whatsapp,
+  email: r.email,
+  payment_status: r.payment_status,
+  payment_confirmed_at: r.payment_confirmed_at,
+  payment_confirmed_by: r.payment_confirmed_by,
+  payment_note: r.payment_note,
+  payment_proof_url: r.payment_proof_url,
+  created_at: r.created_at,
+  checkin_at: r.checkin_at,
+  checkin_by: r.checkin_by,
+  wa_sent_at: r.wa_sent_at,
+  answers: r.answers || {},
+  form_snapshot: r.form_snapshot || {},
+  confirmed_by_admin: r.admins,
+}));
+---
+
+<AdminLayout title={`Peserta: ${event.title}`} adminName={admin.name} adminRole={admin.role}>
+  <div class="peserta-page">
+    <div class="page-header">
+      <div>
+        <div class="breadcrumb">
+          <a href="/admin/events">Event</a>
+          <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+          <a href={`/admin/events/${event.id}/edit`}>{event.title}</a>
+          <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+          <span>Data Peserta</span>
+        </div>
+        <h2 class="page-title">Data Peserta: {event.title}</h2>
+        <p class="page-desc">Kelola verifikasi pembayaran pendaftar, kirim tiket via WhatsApp, dan lihat jawaban formulir.</p>
+      </div>
+
+      <div class="header-actions">
+        <a href={`/admin/events/${event.id}/kehadiran`} class="btn btn-secondary btn-sm">
+          <span class="material-symbols-outlined" aria-hidden="true">qr_code_scanner</span>
+          Rekap Hadir
+        </a>
+        <a href={`/admin/events/${event.id}/form`} class="btn btn-secondary btn-sm">
+          <span class="material-symbols-outlined" aria-hidden="true">tune</span>
+          Form Builder
+        </a>
+      </div>
+    </div>
+
+    <!-- Interactive Peserta Table -->
+    <PesertaTable
+      client:load
+      eventId={event.id}
+      eventTitle={event.title}
+      eventSlug={event.slug}
+      quota={event.quota}
+      initialParticipants={participants}
+      defaultWaToUserTemplate={defaultWaTemplate}
+    />
+  </div>
+</AdminLayout>
+
+<style>
+  .peserta-page {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ink-600);
+    margin-bottom: 6px;
+  }
+
+  .breadcrumb a {
+    color: var(--pink-500);
+    text-decoration: none;
+  }
+
+  .breadcrumb .material-symbols-outlined { font-size: 16px; }
+
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .page-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 4px 0;
+  }
+
+  .page-desc {
+    font-size: 14px;
+    color: var(--ink-600);
+    margin: 0;
+  }
+
+  .header-actions {
+    display: flex;
+    gap: 8px;
+  }
+</style>

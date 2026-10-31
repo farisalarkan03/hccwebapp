@@ -1,0 +1,86 @@
+---
+export const prerender = false;
+
+import { requireAdmin } from '../../../lib/auth';
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { createServiceClient } from '../../../lib/supabase';
+import { PageBlockEditor, type PageData } from '../../../components/admin/PageBlockEditor';
+
+const authResult = await requireAdmin(Astro);
+if (authResult instanceof Response) return authResult;
+
+const { admin } = authResult;
+const supabase = createServiceClient();
+
+// Fetch events list for linking
+const { data: events } = await supabase
+  .from('events')
+  .select('id, title, slug, date_start, location, price_per_couple')
+  .is('deleted_at', null)
+  .order('date_start', { ascending: false });
+
+const eventsList = (events || []).map((e: any) => ({
+  id: e.id,
+  title: e.title,
+  slug: e.slug,
+  date_start: e.date_start,
+  location: e.location,
+  price_per_couple: Number(e.price_per_couple),
+}));
+
+const emptyPage: PageData = {
+  title: '',
+  slug: '',
+  summary: '',
+  cover_url: '',
+  related_event_id: '',
+  show_on_landing: false,
+  status: 'draft',
+  blocks: [
+    {
+      id: 'blk_initial_heading',
+      type: 'heading',
+      data: { text: 'Informasi Kelas', level: 'h2' },
+    },
+    {
+      id: 'blk_initial_text',
+      type: 'text',
+      data: { text: 'Tuliskan deskripsi lengkap atau materi yang akan dipelajari pada kelas ini...' },
+    },
+  ],
+};
+---
+
+<AdminLayout title="Buat Halaman Baru" adminName={admin.name} adminRole={admin.role}>
+  <div class="halaman-editor-page">
+    <div class="breadcrumb">
+      <a href="/admin/halaman">Halaman</a>
+      <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+      <span>Buat Halaman Baru</span>
+    </div>
+
+    <PageBlockEditor
+      client:load
+      initialPage={emptyPage}
+      eventsList={eventsList}
+    />
+  </div>
+</AdminLayout>
+
+<style>
+  .halaman-editor-page {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ink-600);
+  }
+  .breadcrumb a { color: var(--pink-500); text-decoration: none; }
+  .breadcrumb .material-symbols-outlined { font-size: 16px; }
+</style>

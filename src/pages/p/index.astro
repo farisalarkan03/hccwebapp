@@ -1,0 +1,479 @@
+---
+export const prerender = false;
+
+import PublicLayout from '../../layouts/PublicLayout.astro';
+import { supabase } from '../../lib/supabase';
+import { formatDateWIB } from '../../lib/format';
+
+let pages: any[] = [];
+
+try {
+  const { data: pagesList } = await supabase
+    .from('pages')
+    .select('id, title, slug, summary, cover_url, published_at, created_at')
+    .eq('status', 'published')
+    .is('deleted_at', null)
+    .order('published_at', { ascending: false, nullsFirst: false });
+
+  if (pagesList) pages = pagesList;
+} catch (err) {
+  console.warn('Supabase error:', err);
+}
+
+const featuredPage = pages[0] ?? null;
+const restPages = pages.slice(1);
+---
+
+<PublicLayout
+  title="Tulisan & Inspirasi Pernikahan — Happy Couple Class"
+  description="Kumpulan tulisan, renungan, dan panduan seputar pernikahan islami dari tim Happy Couple Class untuk menguatkan iman dan cinta dalam rumah tangga."
+>
+  <!-- Page Header -->
+  <section class="blog-header">
+    <div class="container">
+      <nav class="breadcrumb" aria-label="Navigasi">
+        <a href="/">Beranda</a>
+        <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+        <span aria-current="page">Tulisan & Inspirasi</span>
+      </nav>
+
+      <div class="header-content">
+        <span class="section-tag">Artikel & Inspirasi</span>
+        <h1 class="page-title">
+          Tulisan &amp; <em class="italic-pink">inspirasi pernikahan</em>
+        </h1>
+        <p class="page-desc">
+          Kumpulan tulisan, renungan, dan panduan seputar pernikahan islami
+          untuk membantu Anda membangun keluarga sakinah, mawaddah, wa rahmah.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Articles List -->
+  <section class="blog-list-section">
+    <div class="container">
+      {pages.length === 0 && (
+        <div class="empty-state">
+          <span class="material-symbols-outlined empty-icon" aria-hidden="true">article</span>
+          <h2 class="empty-title">Belum Ada Tulisan</h2>
+          <p class="empty-desc">
+            Konten sedang disiapkan. Nantikan artikel-artikel inspiratif dari tim
+            Happy Couple Class seputar pernikahan islami.
+          </p>
+          <a href="/" class="btn btn-secondary btn-md">Kembali ke Beranda</a>
+        </div>
+      )}
+
+      {featuredPage && (
+        <a href={`/p/${featuredPage.slug}`} class="featured-article">
+          {featuredPage.cover_url && (
+            <div class="featured-img-wrap">
+              <img src={featuredPage.cover_url} alt={featuredPage.title} class="featured-img" loading="eager" />
+            </div>
+          )}
+          <div class="featured-content">
+            <span class="featured-badge">
+              <span class="material-symbols-outlined" aria-hidden="true">star</span>
+              Artikel Terbaru
+            </span>
+            <h2 class="featured-title">{featuredPage.title}</h2>
+            {featuredPage.summary && <p class="featured-excerpt">{featuredPage.summary}</p>}
+            <div class="featured-meta">
+              {featuredPage.published_at && (
+                <span class="meta-date">
+                  <span class="material-symbols-outlined" aria-hidden="true">calendar_today</span>
+                  {formatDateWIB(featuredPage.published_at)}
+                </span>
+              )}
+              <span class="read-more">
+                Baca selengkapnya
+                <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
+              </span>
+            </div>
+          </div>
+        </a>
+      )}
+
+      {restPages.length > 0 && (
+        <div class="articles-grid">
+          {restPages.map((page) => (
+            <a href={`/p/${page.slug}`} class="article-card">
+              {page.cover_url ? (
+                <div class="article-img-wrap">
+                  <img src={page.cover_url} alt={page.title} class="article-img" loading="lazy" />
+                </div>
+              ) : (
+                <div class="article-img-placeholder">
+                  <span class="material-symbols-outlined" aria-hidden="true">menu_book</span>
+                </div>
+              )}
+              <div class="article-body">
+                <h3 class="article-title">{page.title}</h3>
+                {page.summary && <p class="article-excerpt">{page.summary}</p>}
+                <div class="article-footer">
+                  {page.published_at && (
+                    <span class="article-date">
+                      <span class="material-symbols-outlined" aria-hidden="true">calendar_today</span>
+                      {formatDateWIB(page.published_at)}
+                    </span>
+                  )}
+                  <span class="article-read-more">Baca →</span>
+                </div>
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  </section>
+
+  <!-- Bottom CTA -->
+  <section class="bottom-cta">
+    <div class="container cta-inner">
+      <h2 class="cta-title">Siap untuk langkah selanjutnya?</h2>
+      <p class="cta-desc">
+        Ilmu saja tidak cukup — praktikkan bersama pasangan dalam kelas intensif Happy Couple Class.
+      </p>
+      <div class="cta-actions">
+        <a href="/event" class="btn btn-primary btn-md">
+          <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>
+          Lihat Jadwal Kelas
+        </a>
+        <a href="/" class="btn btn-outline btn-md">Kembali ke Beranda</a>
+      </div>
+    </div>
+  </section>
+</PublicLayout>
+
+<style>
+  /* Header */
+  .blog-header {
+    background: var(--white);
+    padding: 40px 0 56px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ink-600);
+    margin-bottom: 32px;
+  }
+  .breadcrumb a { color: var(--pink-500); text-decoration: none; }
+  .breadcrumb a:hover { text-decoration: underline; }
+  .breadcrumb .material-symbols-outlined { font-size: 16px; color: var(--ink-400); }
+
+  .header-content { max-width: 680px; }
+
+  .section-tag {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--pink-600);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    display: block;
+    margin-bottom: 10px;
+  }
+
+  .page-title {
+    font-size: 40px;
+    font-weight: 700;
+    color: var(--ink-900);
+    margin: 0 0 14px 0;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+  .italic-pink { font-style: italic; color: var(--pink-500); }
+
+  .page-desc {
+    font-size: 16px;
+    color: var(--ink-600);
+    line-height: 1.7;
+    margin: 0;
+    max-width: 560px;
+  }
+
+  /* Blog List */
+  .blog-list-section {
+    padding: 64px 0 80px 0;
+    background: var(--pink-50);
+    min-height: 400px;
+  }
+
+  /* Featured Article */
+  .featured-article {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+    text-decoration: none;
+    color: inherit;
+    margin-bottom: 48px;
+    transition: transform 200ms ease, box-shadow 200ms ease;
+  }
+
+  .featured-article:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 48px rgba(180, 0, 110, 0.12);
+  }
+
+  .featured-img-wrap {
+    height: 340px;
+    overflow: hidden;
+  }
+
+  .featured-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 500ms ease;
+  }
+
+  .featured-article:hover .featured-img { transform: scale(1.04); }
+
+  .featured-content {
+    padding: 40px 40px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 16px;
+  }
+
+  .featured-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--pink-600);
+    background: var(--pink-50);
+    padding: 4px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--pink-200);
+    width: fit-content;
+  }
+  .featured-badge .material-symbols-outlined { font-size: 14px; }
+
+  .featured-title {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--ink-900);
+    margin: 0;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+  }
+
+  .featured-excerpt {
+    font-size: 15px;
+    color: var(--ink-600);
+    line-height: 1.7;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .featured-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 4px;
+  }
+
+  .meta-date {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ink-400);
+  }
+  .meta-date .material-symbols-outlined { font-size: 15px; }
+
+  .read-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--pink-600);
+  }
+  .read-more .material-symbols-outlined { font-size: 18px; }
+
+  /* Articles Grid */
+  .articles-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 24px;
+  }
+
+  .article-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    color: inherit;
+    box-shadow: var(--shadow-sm);
+    transition: transform 180ms ease, box-shadow 180ms ease;
+  }
+
+  .article-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .article-img-wrap {
+    height: 200px;
+    overflow: hidden;
+  }
+
+  .article-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 400ms ease;
+  }
+  .article-card:hover .article-img { transform: scale(1.05); }
+
+  .article-img-placeholder {
+    height: 200px;
+    background: linear-gradient(135deg, var(--pink-50) 0%, var(--pink-100) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .article-img-placeholder .material-symbols-outlined { font-size: 48px; color: var(--pink-300); }
+
+  .article-body {
+    padding: 20px 24px 24px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 10px;
+  }
+
+  .article-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .article-excerpt {
+    font-size: 14px;
+    color: var(--ink-600);
+    line-height: 1.65;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .article-footer {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+
+  .article-date {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--ink-400);
+  }
+  .article-date .material-symbols-outlined { font-size: 14px; }
+
+  .article-read-more {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--pink-600);
+  }
+
+  /* Empty */
+  .empty-state {
+    text-align: center;
+    padding: 80px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .empty-icon { font-size: 56px; color: var(--pink-300); }
+  .empty-title { font-size: 22px; font-weight: 600; color: var(--ink-900); margin: 0; }
+  .empty-desc { font-size: 15px; color: var(--ink-600); max-width: 480px; margin: 0; line-height: 1.7; }
+
+  /* Bottom CTA */
+  .bottom-cta {
+    background: var(--white);
+    border-top: 1px solid var(--line);
+    padding: 72px 0;
+  }
+
+  .cta-inner {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    max-width: 560px;
+  }
+
+  .cta-title { font-size: 28px; font-weight: 700; color: var(--ink-900); margin: 0; }
+  .cta-desc { font-size: 15px; color: var(--ink-600); line-height: 1.7; margin: 0; }
+
+  .cta-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 8px;
+  }
+
+  .btn-outline {
+    background: transparent;
+    color: var(--ink-700);
+    border: 1.5px solid var(--line);
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    transition: all 150ms ease;
+  }
+  .btn-outline:hover {
+    border-color: var(--pink-400);
+    color: var(--pink-600);
+    background: var(--pink-50);
+  }
+
+  /* Responsive */
+  @media (max-width: 860px) {
+    .featured-article { grid-template-columns: 1fr; }
+    .featured-img-wrap { height: 240px; }
+    .featured-content { padding: 28px 28px; }
+  }
+
+  @media (max-width: 640px) {
+    .page-title { font-size: 28px; }
+    .articles-grid { grid-template-columns: 1fr; }
+    .featured-title { font-size: 20px; }
+    .cta-actions { flex-direction: column; width: 100%; }
+  }
+</style>

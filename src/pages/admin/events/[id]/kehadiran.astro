@@ -1,0 +1,380 @@
+---
+export const prerender = false;
+
+import { requireAdmin } from '../../../../lib/auth';
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { createServiceClient } from '../../../../lib/supabase';
+import { formatDateWIB } from '../../../../lib/format';
+
+const authResult = await requireAdmin(Astro);
+if (authResult instanceof Response) return authResult;
+
+const { admin } = authResult;
+const { id: eventId } = Astro.params;
+
+if (!eventId) return Astro.redirect('/admin/events');
+
+const supabase = createServiceClient();
+
+// Fetch event
+const { data: event, error: eventError } = await supabase
+  .from('events')
+  .select('id, title, slug')
+  .eq('id', eventId)
+  .is('deleted_at', null)
+  .single();
+
+if (eventError || !event) return Astro.redirect('/admin/events');
+
+// Fetch registrations stats and attended list
+const { data: registrations } = await supabase
+  .from('registrations')
+  .select('id, reg_code, husband_name, wife_name, whatsapp, payment_status, checkin_at, checkin_by')
+  .eq('event_id', eventId)
+  .is('deleted_at', null)
+  .order('checkin_at', { ascending: false });
+
+const allRegs = registrations || [];
+const paidCount = allRegs.filter((r) => r.payment_status === 'paid').length;
+const attendedList = allRegs.filter((r) => r.checkin_at !== null);
+const attendedCount = attendedList.length;
+const attendancePercentage = paidCount > 0 ? Math.round((attendedCount / paidCount) * 100) : 0;
+
+// Fetch recent checkin logs
+const { data: logs } = await supabase
+  .from('checkin_logs')
+  .select('*')
+  .eq('event_id', eventId)
+  .order('created_at', { ascending: false })
+  .limit(20);
+
+const recentLogs = logs || [];
+---
+
+<AdminLayout title={`Kehadiran: ${event.title}`} adminName={admin.name} adminRole={admin.role}>
+  <div class="kehadiran-container">
+    <div class="page-header">
+      <div>
+        <div class="breadcrumb">
+          <a href="/admin/events">Event</a>
+          <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+          <a href={`/admin/events/${event.id}/peserta`}>{event.title}</a>
+          <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+          <span>Rekap Kehadiran</span>
+        </div>
+        <h2 class="page-title">Kehadiran Hari-H: {event.title}</h2>
+        <p class="page-desc">Data real-time kehadiran peserta di lokasi dan rekap pemindaian tiket QR.</p>
+      </div>
+
+      <div class="header-actions">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.print()">
+          <span class="material-symbols-outlined" aria-hidden="true">print</span>
+          Cetak Rekap
+        </button>
+        <a href={`/admin/events/${event.id}/peserta`} class="btn btn-secondary btn-sm">
+          <span class="material-symbols-outlined" aria-hidden="true">group</span>
+          Data Peserta
+        </a>
+      </div>
+    </div>
+
+    <!-- Attendance Stat Cards -->
+    <div class="stats-overview-grid">
+      <div class="stat-card">
+        <div class="stat-icon-wrap stat-icon-green">
+          <span class="material-symbols-outlined" aria-hidden="true">check_circle</span>
+        </div>
+        <div>
+          <span class="stat-lbl">Hadir di Lokasi</span>
+          <span class="stat-val text-ok">{attendedCount}</span>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon-wrap stat-icon-ink">
+          <span class="material-symbols-outlined" aria-hidden="true">payments</span>
+        </div>
+        <div>
+          <span class="stat-lbl">Total Tiket Lunas</span>
+          <span class="stat-val">{paidCount}</span>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon-wrap stat-icon-pink">
+          <span class="material-symbols-outlined" aria-hidden="true">pie_chart</span>
+        </div>
+        <div>
+          <span class="stat-lbl">Persentase Kehadiran</span>
+          <span class="stat-val text-pink">{attendancePercentage}%</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="kehadiran-content-grid">
+      <!-- Left: Daftar Peserta Hadir -->
+      <div class="card table-card">
+        <div class="card-header">
+          <h3 class="card-title">Daftar Pasangan yang Hadir ({attendedCount})</h3>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Waktu Check-in</th>
+                <th>Kode</th>
+                <th>Pasangan</th>
+                <th>Petugas Scanner</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attendedList.length === 0 ? (
+                <tr>
+                  <td colspan="4" class="text-center py-8 text-muted">
+                    Belum ada pasangan yang check-in hari ini.
+                  </td>
+                </tr>
+              ) : (
+                attendedList.map((item) => (
+                  <tr>
+                    <td>
+                      <span class="checkin-time">{formatDateWIB(item.checkin_at!, { showTime: true })}</span>
+                    </td>
+                    <td>
+                      <span class="reg-code">{item.reg_code}</span>
+                    </td>
+                    <td>
+                      <strong>{item.husband_name}</strong> &amp; <strong>{item.wife_name}</strong>
+                    </td>
+                    <td>
+                      <span class="staff-badge">{item.checkin_by || 'Scanner'}</span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Right: Log Scan Terakhir -->
+      <div class="card table-card">
+        <div class="card-header">
+          <h3 class="card-title">Log Scan Pemindai (20 Terakhir)</h3>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>Hasil</th>
+                <th>Petugas</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentLogs.length === 0 ? (
+                <tr>
+                  <td colspan="3" class="text-center py-8 text-muted">
+                    Belum ada aktivitas scan terekam.
+                  </td>
+                </tr>
+              ) : (
+                recentLogs.map((log: any) => {
+                  const resultBadge = {
+                    ok: { cls: 'badge-ok', text: 'BERHASIL' },
+                    already: { cls: 'badge-warn', text: 'SUDAH HADIR' },
+                    unpaid: { cls: 'badge-danger', text: 'BELUM LUNAS' },
+                    wrong_event: { cls: 'badge-danger', text: 'SALAH EVENT' },
+                    invalid: { cls: 'badge-danger', text: 'TIDAK DIKENAL' },
+                  }[log.result as string] || { cls: 'badge-neutral', text: log.result };
+
+                  return (
+                    <tr>
+                      <td class="log-time-cell">
+                        {new Date(log.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </td>
+                      <td>
+                        <span class={`badge ${resultBadge.cls}`}>{resultBadge.text}</span>
+                      </td>
+                      <td class="log-staff-cell">
+                        {log.checked_in_by || '-'}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</AdminLayout>
+
+<script>
+  // Auto-refresh page every 15 seconds during event day
+  setTimeout(() => {
+    window.location.reload();
+  }, 15000);
+</script>
+
+<style>
+  .kehadiran-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ink-600);
+    margin-bottom: 6px;
+  }
+  .breadcrumb a { color: var(--pink-500); text-decoration: none; }
+  .breadcrumb .material-symbols-outlined { font-size: 16px; }
+
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .page-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0 0 4px 0;
+  }
+
+  .page-desc {
+    font-size: 14px;
+    color: var(--ink-600);
+    margin: 0;
+  }
+
+  .header-actions { display: flex; gap: 8px; }
+
+  .stats-overview-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  .stat-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .stat-icon-wrap {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .stat-icon-green { background: var(--ok-bg); color: var(--ok); }
+  .stat-icon-ink { background: #f0edf0; color: var(--ink-900); }
+  .stat-icon-pink { background: var(--pink-100); color: var(--pink-500); }
+  .stat-icon-wrap .material-symbols-outlined { font-size: 24px; }
+
+  .stat-lbl { font-size: 13px; color: var(--ink-600); display: block; }
+  .stat-val { font-size: 26px; font-weight: 700; }
+  .text-ok { color: var(--ok); }
+  .text-pink { color: var(--pink-500); }
+
+  .kehadiran-content-grid {
+    display: grid;
+    grid-template-columns: 7fr 5fr;
+    gap: 20px;
+  }
+
+  .table-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+
+  .card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink-900);
+    margin: 0;
+  }
+
+  .table-responsive { overflow-x: auto; }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .data-table th {
+    text-align: left;
+    padding: 10px 16px;
+    background: var(--pink-50);
+    color: var(--ink-600);
+    font-weight: 500;
+    font-size: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .data-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink-900);
+    vertical-align: middle;
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+
+  .checkin-time { font-size: 12px; color: var(--ink-600); }
+  .reg-code {
+    font-family: monospace;
+    font-weight: 600;
+    color: var(--pink-600);
+    background: var(--pink-50);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .staff-badge { font-size: 12px; color: var(--ink-600); }
+  .badge-danger { background: var(--danger-bg); color: var(--danger); }
+
+  .log-time-cell { font-family: monospace; font-size: 12px; color: var(--ink-600); }
+  .log-staff-cell { font-size: 12px; color: var(--ink-600); }
+
+  .text-center { text-align: center; }
+  .py-8 { padding-top: 32px; padding-bottom: 32px; }
+  .text-muted { color: var(--ink-400); }
+
+  @media (max-width: 960px) {
+    .stats-overview-grid { grid-template-columns: 1fr; }
+    .kehadiran-content-grid { grid-template-columns: 1fr; }
+  }
+
+  @media print {
+    .header-actions, .breadcrumb { display: none !important; }
+    .kehadiran-content-grid { grid-template-columns: 1fr; }
+  }
+</style>
