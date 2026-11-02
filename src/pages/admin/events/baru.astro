@@ -268,15 +268,108 @@ const { data: adminsList } = await supabase
             />
           </div>
 
-          <div class="form-group">
-            <label for="flyer_url" class="form-label">URL Gambar Flyer</label>
+          <div class="form-group col-span-2">
+            <div class="flyer-label-row">
+              <label class="form-label" for="flyer_file_input">
+                Flyer / Banner Event
+              </label>
+              <span class="label-badge-compress">
+                <span class="material-symbols-outlined badge-icon" aria-hidden="true">auto_fix_high</span>
+                Auto Kompres WebP
+              </span>
+            </div>
+
+            <!-- Hidden input that holds the final URL saved into database -->
             <input
-              type="url"
+              type="hidden"
               id="flyer_url"
               name="flyer_url"
-              class="form-input"
-              placeholder="https://... / flyer gambar event"
+              value=""
             />
+
+            <!-- Upload Container -->
+            <div class="flyer-uploader-box">
+              <!-- Dropzone -->
+              <div class="flyer-dropzone" id="flyer-dropzone">
+                <input
+                  type="file"
+                  id="flyer_file_input"
+                  accept="image/jpeg,image/png,image/webp,image/jpg"
+                  class="flyer-file-input"
+                />
+                <div class="dropzone-body">
+                  <div class="dropzone-icon-circle">
+                    <span class="material-symbols-outlined" aria-hidden="true">cloud_upload</span>
+                  </div>
+                  <div class="dropzone-text-group">
+                    <p class="dropzone-main-text">
+                      <strong>Klik untuk pilih file</strong> atau seret gambar flyer ke sini
+                    </p>
+                    <p class="dropzone-sub-text">
+                      JPG, PNG, atau WebP. Gambar otomatis di-resize (maks. 1200px) &amp; dikompres ke WebP agar hemat ruang penyimpanan.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Upload Progress / Compression Status -->
+              <div class="flyer-status-bar" id="flyer-status-bar" style="display: none;">
+                <div class="status-spinner"></div>
+                <div class="status-info">
+                  <strong id="flyer-status-title">Memproses gambar...</strong>
+                  <span id="flyer-status-detail">Mengompresi ke WebP beresolusi optimal...</span>
+                </div>
+              </div>
+
+              <!-- Preview Card (shown when an image is ready) -->
+              <div class="flyer-preview-card" id="flyer-preview-card" style="display: none;">
+                <div class="preview-thumbnail-wrap">
+                  <img id="flyer-preview-img" src="" alt="Preview Flyer" class="preview-thumbnail" />
+                </div>
+                <div class="preview-details">
+                  <div class="preview-title-row">
+                    <span class="material-symbols-outlined icon-verified" aria-hidden="true">check_circle</span>
+                    <strong class="preview-title">Flyer Siap Digunakan</strong>
+                  </div>
+                  <div class="compression-stats" id="compression-stats">
+                    <span class="stat-pill" id="stat-pill-savings">-</span>
+                    <span class="stat-pill-gray" id="stat-pill-size">-</span>
+                  </div>
+                  <p class="preview-url-text" id="preview-url-text"></p>
+                  <div class="preview-actions">
+                    <button type="button" class="btn-action-outline" id="btn-reupload-flyer">
+                      <span class="material-symbols-outlined" aria-hidden="true">sync</span>
+                      Ganti Gambar
+                    </button>
+                    <button type="button" class="btn-action-danger" id="btn-delete-flyer">
+                      <span class="material-symbols-outlined" aria-hidden="true">delete</span>
+                      Hapus
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Manual URL Toggle -->
+              <div class="manual-url-container">
+                <button type="button" class="btn-text-toggle" id="btn-toggle-manual">
+                  <span class="material-symbols-outlined" aria-hidden="true">link</span>
+                  <span>Atau gunakan tautan URL gambar langsung</span>
+                </button>
+                <div class="manual-url-form" id="manual-url-form" style="display: none;">
+                  <div class="manual-url-input-group">
+                    <input
+                      type="url"
+                      id="manual_flyer_url"
+                      class="form-input"
+                      placeholder="https://domain.com/gambar-flyer.jpg"
+                    />
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-apply-manual-url">
+                      Gunakan URL
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="form-group col-span-2">
@@ -391,6 +484,234 @@ const { data: adminsList } = await supabase
       .replace(/[\s_-]+/g, '-')
       .replace(/^-+|-+$/g, '');
     if (slugInput) slugInput.value = slug;
+  });
+
+  // --- Flyer Upload & Auto Compression Logic ---
+  const fileInput = document.getElementById('flyer_file_input') as HTMLInputElement;
+  const dropzone = document.getElementById('flyer-dropzone') as HTMLDivElement;
+  const statusBar = document.getElementById('flyer-status-bar') as HTMLDivElement;
+  const statusTitle = document.getElementById('flyer-status-title') as HTMLElement;
+  const statusDetail = document.getElementById('flyer-status-detail') as HTMLElement;
+  const previewCard = document.getElementById('flyer-preview-card') as HTMLDivElement;
+  const previewImg = document.getElementById('flyer-preview-img') as HTMLImageElement;
+  const statSavings = document.getElementById('stat-pill-savings') as HTMLElement;
+  const statSize = document.getElementById('stat-pill-size') as HTMLElement;
+  const previewUrlText = document.getElementById('preview-url-text') as HTMLElement;
+  const hiddenFlyerUrl = document.getElementById('flyer_url') as HTMLInputElement;
+  const btnReupload = document.getElementById('btn-reupload-flyer') as HTMLButtonElement;
+  const btnDelete = document.getElementById('btn-delete-flyer') as HTMLButtonElement;
+  const btnToggleManual = document.getElementById('btn-toggle-manual') as HTMLButtonElement;
+  const manualForm = document.getElementById('manual-url-form') as HTMLDivElement;
+  const manualInput = document.getElementById('manual_flyer_url') as HTMLInputElement;
+  const btnApplyManual = document.getElementById('btn-apply-manual-url') as HTMLButtonElement;
+  const mainForm = document.querySelector('.event-form') as HTMLFormElement;
+
+  let isUploading = false;
+
+  function formatBytes(bytes: number): string {
+    if (bytes < 1024) return bytes + ' B';
+    const kb = bytes / 1024;
+    if (kb < 1024) return kb.toFixed(1) + ' KB';
+    return (kb / 1024).toFixed(2) + ' MB';
+  }
+
+  // Compress image client-side via HTML5 Canvas
+  async function compressImageFile(file: File): Promise<{ blob: Blob; originalSize: number; compressedSize: number }> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 1200;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxDim) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            }
+          } else {
+            if (height > maxDim) {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            return reject(new Error('Canvas context tidak tersedia.'));
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Compress to WebP with 0.82 quality
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                resolve({
+                  blob,
+                  originalSize: file.size,
+                  compressedSize: blob.size,
+                });
+              } else {
+                // Fallback to JPEG if browser doesn't support WebP export
+                canvas.toBlob(
+                  (jpegBlob) => {
+                    if (jpegBlob) {
+                      resolve({
+                        blob: jpegBlob,
+                        originalSize: file.size,
+                        compressedSize: jpegBlob.size,
+                      });
+                    } else {
+                      reject(new Error('Gagal mengompres gambar.'));
+                    }
+                  },
+                  'image/jpeg',
+                  0.82
+                );
+              }
+            },
+            'image/webp',
+            0.82
+          );
+        };
+        img.onerror = () => reject(new Error('File bukan gambar yang valid.'));
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject(new Error('Gagal membaca file gambar.'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleFlyerSelected(file: File) {
+    if (!file || !file.type.startsWith('image/')) {
+      alert('Mohon pilih file gambar (JPG, PNG, atau WebP).');
+      return;
+    }
+
+    try {
+      isUploading = true;
+      if (dropzone) dropzone.style.display = 'none';
+      if (previewCard) previewCard.style.display = 'none';
+      if (statusBar) statusBar.style.display = 'flex';
+      if (statusTitle) statusTitle.textContent = 'Mengompresi gambar...';
+      if (statusDetail) statusDetail.textContent = `Ukuran asli: ${formatBytes(file.size)}. Mengoptimalkan ukuran...`;
+
+      // 1. Client-side compression
+      const { blob, originalSize, compressedSize } = await compressImageFile(file);
+      const savedPercent = Math.max(0, Math.round(((originalSize - compressedSize) / originalSize) * 100));
+
+      if (statusTitle) statusTitle.textContent = 'Mengunggah flyer ke server...';
+      if (statusDetail) statusDetail.textContent = `WebP teroptimasi (${formatBytes(compressedSize)} — hemat ${savedPercent}%). Mengunggah...`;
+
+      // 2. Upload via API
+      const formData = new FormData();
+      const cleanFileName = (file.name.replace(/\.[^/.]+$/, '') || 'flyer') + '.webp';
+      formData.append('file', blob, cleanFileName);
+
+      const res = await fetch('/api/admin/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Gagal mengunggah file flyer.');
+      }
+
+      // 3. Update UI
+      const finalUrl = json.url;
+      if (hiddenFlyerUrl) hiddenFlyerUrl.value = finalUrl;
+      if (previewImg) previewImg.src = finalUrl;
+      if (previewUrlText) previewUrlText.textContent = finalUrl;
+      if (statSavings) statSavings.textContent = `Hemat ${savedPercent}% (${formatBytes(compressedSize)})`;
+      if (statSize) statSize.textContent = `Asli: ${formatBytes(originalSize)}`;
+
+      if (statusBar) statusBar.style.display = 'none';
+      if (previewCard) previewCard.style.display = 'flex';
+      if (dropzone) dropzone.style.display = 'none';
+    } catch (err: any) {
+      alert(err.message || 'Terjadi kesalahan saat mengompres/mengunggah gambar.');
+      if (statusBar) statusBar.style.display = 'none';
+      if (dropzone) dropzone.style.display = 'block';
+      if (hiddenFlyerUrl) hiddenFlyerUrl.value = '';
+    } finally {
+      isUploading = false;
+      if (fileInput) fileInput.value = '';
+    }
+  }
+
+  fileInput?.addEventListener('change', () => {
+    if (fileInput.files && fileInput.files[0]) {
+      handleFlyerSelected(fileInput.files[0]);
+    }
+  });
+
+  // Drag and drop handlers
+  dropzone?.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.classList.add('dropzone-active');
+  });
+
+  dropzone?.addEventListener('dragleave', () => {
+    dropzone.classList.remove('dropzone-active');
+  });
+
+  dropzone?.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('dropzone-active');
+    if (e.dataTransfer?.files && e.dataTransfer.files[0]) {
+      handleFlyerSelected(e.dataTransfer.files[0]);
+    }
+  });
+
+  btnReupload?.addEventListener('click', () => {
+    fileInput?.click();
+  });
+
+  btnDelete?.addEventListener('click', () => {
+    if (confirm('Hapus gambar flyer ini?')) {
+      if (hiddenFlyerUrl) hiddenFlyerUrl.value = '';
+      if (previewImg) previewImg.src = '';
+      if (previewUrlText) previewUrlText.textContent = '';
+      if (previewCard) previewCard.style.display = 'none';
+      if (dropzone) dropzone.style.display = 'block';
+    }
+  });
+
+  btnToggleManual?.addEventListener('click', () => {
+    if (manualForm) {
+      const isHidden = manualForm.style.display === 'none';
+      manualForm.style.display = isHidden ? 'block' : 'none';
+    }
+  });
+
+  btnApplyManual?.addEventListener('click', () => {
+    const val = manualInput?.value.trim();
+    if (!val) {
+      alert('Masukkan URL gambar.');
+      return;
+    }
+    if (hiddenFlyerUrl) hiddenFlyerUrl.value = val;
+    if (previewImg) previewImg.src = val;
+    if (previewUrlText) previewUrlText.textContent = val;
+    if (statSavings) statSavings.textContent = 'URL Eksternal';
+    if (statSize) statSize.textContent = '-';
+    if (dropzone) dropzone.style.display = 'none';
+    if (statusBar) statusBar.style.display = 'none';
+    if (previewCard) previewCard.style.display = 'flex';
+  });
+
+  // Prevent form submission if upload is still in progress
+  mainForm?.addEventListener('submit', (e) => {
+    if (isUploading) {
+      e.preventDefault();
+      alert('Sedang mengunggah flyer, mohon tunggu hingga proses selesai.');
+    }
   });
 </script>
 
@@ -675,6 +996,333 @@ const { data: adminsList } = await supabase
       flex-direction: column;
       align-items: flex-start;
       gap: 8px;
+    }
+  }
+
+  /* Flyer Uploader Styles */
+  .flyer-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2px;
+  }
+
+  .label-badge-compress {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--pink-600);
+    background: var(--pink-50);
+    padding: 3px 8px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--pink-200);
+  }
+
+  .label-badge-compress .badge-icon {
+    font-size: 14px;
+  }
+
+  .flyer-uploader-box {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .flyer-dropzone {
+    position: relative;
+    border: 2px dashed var(--line);
+    border-radius: var(--radius-lg);
+    background: #faf7f8;
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 180ms ease;
+  }
+
+  .flyer-dropzone:hover,
+  .flyer-dropzone.dropzone-active {
+    border-color: var(--pink-400);
+    background: var(--pink-50);
+  }
+
+  .flyer-file-input {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .dropzone-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    pointer-events: none;
+  }
+
+  .dropzone-icon-circle {
+    width: 52px;
+    height: 52px;
+    border-radius: var(--radius-full);
+    background: var(--white);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-sm);
+    color: var(--pink-500);
+  }
+
+  .dropzone-icon-circle .material-symbols-outlined {
+    font-size: 28px;
+  }
+
+  .dropzone-text-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .dropzone-main-text {
+    font-size: 14px;
+    color: var(--ink-900);
+    margin: 0;
+  }
+
+  .dropzone-sub-text {
+    font-size: 12px;
+    color: var(--ink-500);
+    margin: 0;
+    max-width: 440px;
+  }
+
+  /* Status Bar */
+  .flyer-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--pink-50);
+    border: 1px solid var(--pink-200);
+    border-radius: var(--radius-md);
+    padding: 14px 18px;
+  }
+
+  .status-spinner {
+    width: 22px;
+    height: 22px;
+    border: 3px solid var(--pink-200);
+    border-top-color: var(--pink-500);
+    border-radius: 50%;
+    animation: spin 800ms linear infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .status-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .status-info strong {
+    font-size: 13px;
+    color: var(--ink-900);
+  }
+
+  .status-info span {
+    font-size: 12px;
+    color: var(--ink-600);
+  }
+
+  /* Preview Card */
+  .flyer-preview-card {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+    box-shadow: var(--shadow-xs);
+  }
+
+  .preview-thumbnail-wrap {
+    width: 100px;
+    height: 120px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: #f0f0f0;
+    flex-shrink: 0;
+    border: 1px solid var(--line);
+  }
+
+  .preview-thumbnail {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .preview-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-grow: 1;
+    min-width: 0;
+  }
+
+  .preview-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .icon-verified {
+    color: #10b981;
+    font-size: 18px;
+  }
+
+  .preview-title {
+    font-size: 14px;
+    color: var(--ink-900);
+  }
+
+  .compression-stats {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .stat-pill {
+    font-size: 11px;
+    font-weight: 600;
+    color: #065f46;
+    background: #d1fae5;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+  }
+
+  .stat-pill-gray {
+    font-size: 11px;
+    color: var(--ink-500);
+    background: var(--ink-100);
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+  }
+
+  .preview-url-text {
+    font-size: 11px;
+    color: var(--ink-400);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+    font-family: monospace;
+  }
+
+  .preview-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .btn-action-outline {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    background: var(--white);
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-700);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .btn-action-outline:hover {
+    border-color: var(--pink-300);
+    color: var(--pink-600);
+  }
+
+  .btn-action-danger {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border: 1px solid transparent;
+    background: transparent;
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--danger);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .btn-action-danger:hover {
+    background: var(--danger-bg);
+  }
+
+  .btn-action-outline .material-symbols-outlined,
+  .btn-action-danger .material-symbols-outlined {
+    font-size: 15px;
+  }
+
+  /* Manual URL toggle */
+  .manual-url-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 2px;
+  }
+
+  .btn-text-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: var(--pink-500);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 0;
+    width: fit-content;
+  }
+
+  .btn-text-toggle .material-symbols-outlined {
+    font-size: 16px;
+  }
+
+  .btn-text-toggle:hover {
+    text-decoration: underline;
+  }
+
+  .manual-url-input-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  @media (max-width: 640px) {
+    .flyer-preview-card {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .preview-thumbnail-wrap {
+      width: 100%;
+      height: 180px;
     }
   }
 </style>
