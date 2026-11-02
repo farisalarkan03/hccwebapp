@@ -34,11 +34,12 @@ try {
     .is('deleted_at', null);
   stats.activeEvents = activeEventsCount || 0;
 
-  // Registrations stats
+  // Registrations stats — hanya dari event yang belum dihapus
   const { data: regStats } = await supabase
     .from('registrations')
-    .select('payment_status, checkin_at')
-    .is('deleted_at', null);
+    .select('payment_status, checkin_at, events!inner(deleted_at)')
+    .is('deleted_at', null)
+    .is('events.deleted_at', null);
 
   if (regStats) {
     stats.totalRegistrations = regStats.length;
@@ -47,7 +48,7 @@ try {
     stats.attended = regStats.filter((r) => r.checkin_at !== null).length;
   }
 
-  // 5 Recent pending registrations
+  // 5 Recent pending registrations — hanya dari event yang belum dihapus
   const { data: pendingList } = await supabase
     .from('registrations')
     .select(`
@@ -59,13 +60,15 @@ try {
       created_at,
       payment_deadline,
       event_id,
-      events (
+      events!inner (
         title,
-        price_per_couple
+        price_per_couple,
+        deleted_at
       )
     `)
     .eq('payment_status', 'pending')
     .is('deleted_at', null)
+    .is('events.deleted_at', null)
     .order('created_at', { ascending: false })
     .limit(5);
 
