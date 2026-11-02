@@ -70,22 +70,6 @@ const initialFields = (fields || []).map((f) => ({
           <p class="fb-main-desc">Atur pertanyaan pendaftaran untuk calon peserta. Perubahan tersimpan secara otomatis.</p>
         </div>
         <div class="header-action-links">
-          {event.status !== 'open' ? (
-            <button
-              type="button"
-              class="btn btn-primary btn-sm btn-header-open-reg"
-              id="btn-top-open-reg"
-              data-event-id={event.id}
-            >
-              <span class="material-symbols-outlined" aria-hidden="true">rocket_launch</span>
-              Buka Pendaftaran
-            </button>
-          ) : (
-            <span class="status-pill-open" title="Pendaftaran kelas ini aktif dan dapat diakses peserta">
-              <span class="material-symbols-outlined" aria-hidden="true">check_circle</span>
-              Pendaftaran Dibuka
-            </span>
-          )}
           <a href={`/admin/events/${event.id}/edit`} class="btn btn-secondary btn-sm">
             <span class="material-symbols-outlined" aria-hidden="true">settings</span>
             Pengaturan Kelas
@@ -97,31 +81,6 @@ const initialFields = (fields || []).map((f) => ({
         </div>
       </div>
     </div>
-
-    {event.status === 'draft' && (
-      <div class="draft-banner" id="draft-banner">
-        <div class="draft-banner-content">
-          <div class="draft-icon-wrap">
-            <span class="material-symbols-outlined" aria-hidden="true">lock</span>
-          </div>
-          <div class="draft-text-wrap">
-            <strong class="draft-banner-title">Status Kelas Saat Ini: Draft (Pendaftaran Belum Dibuka)</strong>
-            <p class="draft-banner-desc">
-              Setelah selesai menyusun formulir pertanyaan, klik <strong>Buka Pendaftaran</strong> agar halaman publik pendaftaran langsung aktif dan calon peserta bisa mendaftar.
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          class="btn btn-primary btn-sm btn-banner-open"
-          id="btn-banner-open-reg"
-          data-event-id={event.id}
-        >
-          <span class="material-symbols-outlined" aria-hidden="true">rocket_launch</span>
-          Buka Pendaftaran Sekarang
-        </button>
-      </div>
-    )}
 
     <!-- Interactive Form Builder Component -->
     <FormBuilder
@@ -135,40 +94,6 @@ const initialFields = (fields || []).map((f) => ({
     />
   </div>
 </AdminLayout>
-
-<script>
-  const openRegBtns = [
-    document.getElementById('btn-top-open-reg'),
-    document.getElementById('btn-banner-open-reg'),
-  ].filter(Boolean) as HTMLButtonElement[];
-
-  openRegBtns.forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      if (!confirm('Buka pendaftaran untuk kelas ini sekarang? Form pendaftaran akan langsung aktif untuk calon peserta.')) {
-        return;
-      }
-      btn.disabled = true;
-      const originalHtml = btn.innerHTML;
-      btn.innerHTML = '<span class="material-symbols-outlined spin-icon">sync</span> Membuka...';
-      try {
-        const eventId = btn.getAttribute('data-event-id');
-        const res = await fetch(`/api/admin/events/${eventId}/status`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'open' }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Gagal membuka pendaftaran');
-        alert('Pendaftaran kelas berhasil dibuka! Calon peserta sudah dapat mendaftar.');
-        window.location.reload();
-      } catch (err: any) {
-        alert(err.message || 'Terjadi kesalahan saat membuka pendaftaran.');
-        btn.disabled = false;
-        btn.innerHTML = originalHtml;
-      }
-    });
-  });
-</script>
 
 <style>
   .form-builder-page {
@@ -221,7 +146,7 @@ const initialFields = (fields || []).map((f) => ({
     flex-wrap: wrap;
   }
 
-  .btn-header-open-reg, .btn-banner-open {
+  .btn-header-open-reg {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -233,7 +158,7 @@ const initialFields = (fields || []).map((f) => ({
     transition: all 150ms ease;
   }
 
-  .btn-header-open-reg:hover, .btn-banner-open:hover {
+  .btn-header-open-reg:hover {
     background: var(--pink-600);
     box-shadow: 0 2px 4px rgba(224, 76, 136, 0.3);
   }
@@ -253,62 +178,6 @@ const initialFields = (fields || []).map((f) => ({
 
   .status-pill-open .material-symbols-outlined {
     font-size: 16px;
-  }
-
-  /* Draft notification banner */
-  .draft-banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    background: #fffbeb;
-    border: 1px solid #fde68a;
-    border-radius: var(--radius-lg);
-    padding: 16px 20px;
-    box-shadow: var(--shadow-xs);
-    flex-wrap: wrap;
-  }
-
-  .draft-banner-content {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    flex: 1;
-    min-width: 280px;
-  }
-
-  .draft-icon-wrap {
-    width: 40px;
-    height: 40px;
-    border-radius: var(--radius-full);
-    background: #fef3c7;
-    color: #b45309;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .draft-icon-wrap .material-symbols-outlined {
-    font-size: 22px;
-  }
-
-  .draft-text-wrap {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .draft-banner-title {
-    font-size: 14px;
-    color: #92400e;
-  }
-
-  .draft-banner-desc {
-    font-size: 13px;
-    color: #78350f;
-    margin: 0;
-    line-height: 1.4;
   }
 
   .spin-icon {
