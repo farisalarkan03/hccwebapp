@@ -24,6 +24,7 @@ interface FormBuilderProps {
   eventTitle: string;
   initialFields: FormFieldItem[];
   registrationCount: number;
+  initialStatus?: 'draft' | 'open' | 'closed' | 'done';
 }
 
 const FIELD_TYPES = [
@@ -285,12 +286,47 @@ export function FormBuilder({
   eventTitle,
   initialFields,
   registrationCount,
+  initialStatus = 'draft',
 }: FormBuilderProps) {
   const [fields, setFields] = useState<FormFieldItem[]>(initialFields);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'dirty'>('saved');
   const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
   const [copySuccess, setCopySuccess] = useState(false);
   const [showTypeMenu, setShowTypeMenu] = useState(false);
+  const [eventStatus, setEventStatus] = useState<string>(initialStatus);
+  const [isOpeningReg, setIsOpeningReg] = useState(false);
+
+  const handleOpenRegistration = async () => {
+    if (!confirm('Buka pendaftaran untuk kelas ini sekarang? Form pendaftaran akan langsung aktif untuk calon peserta.')) {
+      return;
+    }
+
+    setIsOpeningReg(true);
+    try {
+      const res = await fetch(`/api/admin/events/${eventId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'open' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gagal membuka pendaftaran');
+
+      setEventStatus('open');
+      alert('Pendaftaran kelas berhasil dibuka! Calon peserta sudah dapat mendaftar.');
+
+      // Update any parent banner/buttons if present in DOM
+      const banner = document.getElementById('draft-banner');
+      if (banner) banner.style.display = 'none';
+      const topBtn = document.getElementById('btn-top-open-reg');
+      if (topBtn) {
+        topBtn.outerHTML = '<span class="status-pill-open"><span class="material-symbols-outlined">check_circle</span> Pendaftaran Aktif</span>';
+      }
+    } catch (err: any) {
+      alert(err.message || 'Terjadi kesalahan saat membuka pendaftaran.');
+    } finally {
+      setIsOpeningReg(false);
+    }
+  };
 
   const isInitialMount = useRef(true);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
@@ -447,6 +483,29 @@ export function FormBuilder({
         </div>
 
         <div className="fb-toolbar-right">
+          {eventStatus !== 'open' ? (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm btn-open-reg"
+              onClick={handleOpenRegistration}
+              disabled={isOpeningReg}
+              title="Buka pendaftaran agar formulir dapat diakses oleh publik"
+            >
+              <Icon
+                name={isOpeningReg ? 'sync' : 'rocket_launch'}
+                size={18}
+                className={isOpeningReg ? 'spin-icon' : ''}
+                aria-hidden
+              />
+              <span>{isOpeningReg ? 'Membuka...' : 'Buka Pendaftaran'}</span>
+            </button>
+          ) : (
+            <span className="fb-reg-open-pill" title="Pendaftaran kelas ini aktif dan dapat diisi oleh peserta">
+              <Icon name="check_circle" size={16} aria-hidden />
+              <span>Pendaftaran Dibuka</span>
+            </span>
+          )}
+
           <button
             type="button"
             className="btn btn-secondary btn-sm"
@@ -639,6 +698,41 @@ export function FormBuilder({
         .fb-status-saved { background: var(--ok-bg); color: var(--ok); }
         .fb-status-saving { background: var(--pink-50); color: var(--pink-500); }
         .fb-status-dirty { background: var(--warn-bg); color: var(--warn); }
+
+        .fb-reg-open-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          background: #ecfdf5;
+          color: #065f46;
+          border: 1px solid #a7f3d0;
+          border-radius: var(--radius-md);
+          font-size: 13px;
+          font-weight: 500;
+        }
+
+        .btn-open-reg {
+          background: var(--pink-500);
+          color: var(--white);
+          border: none;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-weight: 500;
+          box-shadow: 0 1px 2px rgba(224, 76, 136, 0.2);
+          transition: all 150ms ease;
+        }
+
+        .btn-open-reg:hover:not(:disabled) {
+          background: var(--pink-600);
+          box-shadow: 0 2px 4px rgba(224, 76, 136, 0.3);
+        }
+
+        .btn-open-reg:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
 
         .spin-icon {
           animation: spin 1s linear infinite;
