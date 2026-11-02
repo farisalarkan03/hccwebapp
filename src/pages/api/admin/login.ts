@@ -2,6 +2,7 @@ export const prerender = false;
 
 import type { APIRoute } from 'astro';
 import { createClient } from '@supabase/supabase-js';
+import { getServerEnv } from '../../../lib/server-env';
 
 export const POST: APIRoute = async ({ request, url }) => {
   try {
@@ -15,8 +16,8 @@ export const POST: APIRoute = async ({ request, url }) => {
       );
     }
 
-    const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
+    const supabaseUrl = getServerEnv('PUBLIC_SUPABASE_URL', import.meta.env.PUBLIC_SUPABASE_URL);
+    const supabaseAnonKey = getServerEnv('PUBLIC_SUPABASE_ANON_KEY', import.meta.env.PUBLIC_SUPABASE_ANON_KEY);
 
     if (!supabaseUrl || !supabaseAnonKey) {
       return new Response(

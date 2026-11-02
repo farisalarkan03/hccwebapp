@@ -5,6 +5,7 @@ import PublicLayout from '../../layouts/PublicLayout.astro';
 import { createServiceClient } from '../../lib/supabase';
 import { formatDateWIB, formatRupiah } from '../../lib/format';
 import { RegistrationFormWrapper } from '../../components/register/RegistrationFormWrapper';
+import { getServerEnv } from '../../lib/server-env';
 
 const { slug } = Astro.params;
 if (!slug) return Astro.redirect('/');
@@ -43,7 +44,7 @@ const formattedFields = (fields || []).map((f) => ({
   sort_order: f.sort_order,
 }));
 
-const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || '';
+const turnstileSiteKey = getServerEnv('PUBLIC_TURNSTILE_SITE_KEY', import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || '');
 const isOpen = event.status === 'open';
 ---
 

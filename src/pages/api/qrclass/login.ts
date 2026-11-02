@@ -3,6 +3,7 @@ export const prerender = false;
 import type { APIRoute } from 'astro';
 import { createServiceClient } from '../../../lib/supabase';
 import { signQrToken } from '../../../lib/jwt';
+import { getServerEnv } from '../../../lib/server-env';
 
 export const POST: APIRoute = async ({ request }) => {
   try {
@@ -57,7 +58,7 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     // 3. Generate 12-hour JWT
-    const jwtSecret = import.meta.env.QR_JWT_SECRET || 'default-secret-qr-key-123456789';
+    const jwtSecret = getServerEnv('QR_JWT_SECRET', import.meta.env.QR_JWT_SECRET || 'default-secret-qr-key-123456789');
     const payload = {
       event_id: event.id,
       event_title: event.title,

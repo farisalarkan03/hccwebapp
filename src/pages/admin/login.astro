@@ -4,14 +4,15 @@ export const prerender = false;
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { extractCookieValue } from '../../lib/auth';
 import { createClient } from '@supabase/supabase-js';
+import { getServerEnv } from '../../lib/server-env';
 
 // If already logged in, redirect to /admin
 const cookieHeader = Astro.request.headers.get('cookie') ?? '';
 const existingToken = extractCookieValue(cookieHeader, 'sb-access-token');
 
 if (existingToken) {
-  const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseUrl = getServerEnv('PUBLIC_SUPABASE_URL', import.meta.env.PUBLIC_SUPABASE_URL || '');
+  const supabaseAnonKey = getServerEnv('PUBLIC_SUPABASE_ANON_KEY', import.meta.env.PUBLIC_SUPABASE_ANON_KEY || '');
   if (supabaseUrl && supabaseAnonKey) {
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -32,9 +33,9 @@ if (existingToken) {
   }
 }
 
-const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || '';
-const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || '';
+const turnstileSiteKey = getServerEnv('PUBLIC_TURNSTILE_SITE_KEY', import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || '');
+const supabaseUrl = getServerEnv('PUBLIC_SUPABASE_URL', import.meta.env.PUBLIC_SUPABASE_URL || '');
+const supabaseAnonKey = getServerEnv('PUBLIC_SUPABASE_ANON_KEY', import.meta.env.PUBLIC_SUPABASE_ANON_KEY || '');
 ---
 
 <BaseLayout title="Login Admin — Happy Couple Class" noindex={true}>

@@ -2,9 +2,10 @@ export const prerender = false;
 
 import type { APIRoute } from 'astro';
 import { supabase, createServiceClient } from '../lib/supabase';
+import { getServerEnv } from '../lib/server-env';
 
 export const GET: APIRoute = async () => {
-  const siteUrl = (import.meta.env.PUBLIC_SITE_URL || 'https://happycoupleclass.com').replace(/\/$/, '');
+  const siteUrl = (getServerEnv('PUBLIC_SITE_URL', import.meta.env.PUBLIC_SITE_URL || 'https://happycoupleclass.com')).replace(/\/$/, '');
 
   let client = supabase;
   try {

@@ -4,6 +4,7 @@ import type { APIRoute } from 'astro';
 import { extractCookieValue } from '../../../lib/auth';
 import { verifyQrToken } from '../../../lib/jwt';
 import { createServiceClient } from '../../../lib/supabase';
+import { getServerEnv } from '../../../lib/server-env';
 
 export const POST: APIRoute = async ({ request }) => {
   try {
@@ -17,7 +18,7 @@ export const POST: APIRoute = async ({ request }) => {
       });
     }
 
-    const jwtSecret = import.meta.env.QR_JWT_SECRET || 'default-secret-qr-key-123456789';
+    const jwtSecret = getServerEnv('QR_JWT_SECRET', import.meta.env.QR_JWT_SECRET || 'default-secret-qr-key-123456789');
     const payload = await verifyQrToken(qrToken, jwtSecret);
 
     if (!payload || !payload.event_id) {

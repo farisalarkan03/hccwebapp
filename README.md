@@ -102,34 +102,76 @@ Buka browser di `http://localhost:4321`.
 
 ---
 
-## 🌐 Panduan Deployment ke Cloudflare Pages
+## 🚀 Deploy ke Cloudflare Workers
 
-1. **Hubungkan Repositori GitHub**:
-   - Masuk ke dashboard Cloudflare > **Workers & Pages** > **Create application** > **Pages** > **Connect to Git**.
-   - Pilih repositori proyek ini.
+Proyek ini menggunakan **Astro 7** dengan adapter `@astrojs/cloudflare` v14, yang menarget **Cloudflare Workers** (bukan Pages Functions).
 
-2. **Pengaturan Build**:
-   - **Framework preset**: `Astro`
-   - **Build command**: `npm run build`
-   - **Build output directory**: `dist`
-   - **Root directory**: `/` (default)
-   - **Environment variables (Node.js)**:
-     - Tambahkan variabel `NODE_VERSION` dengan nilai `22.23.4`.
+### Build Command
 
-3. **Konfigurasi Variabel Lingkungan di Cloudflare Pages**:
-   Di menu **Settings > Environment variables**, tambahkan:
-   - `PUBLIC_SUPABASE_URL`
-   - `PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY` (Encrypt / Secret)
-   - `PUBLIC_TURNSTILE_SITE_KEY`
-   - `TURNSTILE_SECRET` (Encrypt / Secret)
-   - `QR_JWT_SECRET` (Encrypt / Secret)
-   - `PUBLIC_SITE_URL`: `https://happycoupleclass.com`
+```bash
+npm run build
+```
 
-4. **Koneksi Custom Domain (`happycoupleclass.com`)**:
-   - Di tab **Custom domains**, klik **Set up a custom domain**.
-   - Masukkan `happycoupleclass.com` dan `www.happycoupleclass.com`.
-   - Cloudflare akan otomatis mengonfigurasi DNS CNAME dan menerbitkan sertifikat SSL gratis.
+Output tersimpan di `dist/`. Wrangler otomatis membaca `dist/server/wrangler.json` yang di-generate oleh adapter.
+
+### Deploy Command
+
+```bash
+# Deploy ke production
+npx wrangler deploy
+
+# Validasi bundle tanpa upload (dry-run)
+npx wrangler deploy --dry-run
+```
+
+### Secrets & Environment Variables
+
+#### Variabel Build-time (diinject saat build oleh Vite / Astro)
+
+Variabel `PUBLIC_*` dibaca dari `.env` lokal saat `npm run build`, lalu diinline ke bundle. Variabel ini **tidak sensitif** dan aman tampil di kode klien.
+
+| Variable | Contoh |
+|---|---|
+| `PUBLIC_SUPABASE_URL` | `https://xxxx.supabase.co` |
+| `PUBLIC_SUPABASE_ANON_KEY` | `eyJhbGci...` |
+| `PUBLIC_TURNSTILE_SITE_KEY` | `0x4AAAAA...` |
+| `PUBLIC_SITE_URL` | `https://happycoupleclass.com` |
+
+#### Secrets Runtime (dibaca oleh Worker saat request, via `cloudflare:workers`)
+
+Variabel sensitif **tidak boleh** ada di `wrangler.jsonc`. Upload menggunakan Wrangler CLI:
+
+```bash
+npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+npx wrangler secret put TURNSTILE_SECRET
+npx wrangler secret put QR_JWT_SECRET
+```
+
+Di Worker, variabel dibaca via `import { env } from 'cloudflare:workers'` (dikelola oleh `src/lib/server-env.ts` secara otomatis dengan fallback untuk build lokal).
+
+#### Dev Lokal (`.dev.vars`)
+
+Untuk development lokal dengan `wrangler dev`, buat file `.dev.vars` di root:
+
+```env
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...
+TURNSTILE_SECRET=0x4AAAAA...
+QR_JWT_SECRET=rahasia-32-karakter-atau-lebih
+```
+
+> [!WARNING]
+> Jangan commit `.dev.vars` ke Git. File ini sudah termasuk dalam `.gitignore`.
+
+---
+
+## 🌐 Custom Domain (`happycoupleclass.com`)
+
+Setelah deploy pertama:
+
+1. Masuk ke **Cloudflare Dashboard** > **Workers & Pages** > pilih Worker `hccwebapp`.
+2. Buka tab **Triggers** > **Custom Domains** > klik **Add Custom Domain**.
+3. Masukkan `happycoupleclass.com` dan/atau `www.happycoupleclass.com`.
+4. Cloudflare akan menerbitkan sertifikat SSL gratis secara otomatis.
 
 ---
 

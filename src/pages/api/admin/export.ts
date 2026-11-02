@@ -4,6 +4,7 @@ import type { APIRoute } from 'astro';
 import { extractCookieValue } from '../../../lib/auth';
 import { createClient } from '@supabase/supabase-js';
 import { createServiceClient } from '../../../lib/supabase';
+import { getServerEnv } from '../../../lib/server-env';
 import { formatDateWIB } from '../../../lib/format';
 
 export const GET: APIRoute = async ({ request, url }) => {
@@ -21,8 +22,8 @@ export const GET: APIRoute = async ({ request, url }) => {
       return new Response('Unauthorized', { status: 401 });
     }
 
-    const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
+    const supabaseUrl = getServerEnv('PUBLIC_SUPABASE_URL', import.meta.env.PUBLIC_SUPABASE_URL);
+    const supabaseAnonKey = getServerEnv('PUBLIC_SUPABASE_ANON_KEY', import.meta.env.PUBLIC_SUPABASE_ANON_KEY);
     const client = createClient(supabaseUrl, supabaseAnonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
       global: { headers: { Authorization: `Bearer ${accessToken}` } },

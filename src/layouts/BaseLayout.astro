@@ -2,6 +2,8 @@
 // Base Layout - shared HTML shell for all pages
 import '../styles/global.css';
 
+import { getServerEnv } from '../lib/server-env';
+
 interface Props {
   title: string;
   description?: string;
@@ -18,7 +20,7 @@ const {
   ogType = 'website',
 } = Astro.props;
 
-const siteUrl = import.meta.env.PUBLIC_SITE_URL || 'https://happycoupleclass.com';
+const siteUrl = getServerEnv('PUBLIC_SITE_URL', import.meta.env.PUBLIC_SITE_URL || 'https://happycoupleclass.com');
 const canonicalUrl = new URL(Astro.url.pathname, siteUrl).href;
 ---
 

@@ -4,6 +4,7 @@ export const prerender = false;
 import PublicLayout from '../../layouts/PublicLayout.astro';
 import { createServiceClient } from '../../lib/supabase';
 import { formatDateWIB, formatRupiah } from '../../lib/format';
+import { getServerEnv } from '../../lib/server-env';
 
 const { slug } = Astro.params;
 if (!slug) return Astro.redirect('/');
@@ -36,7 +37,7 @@ const isOpen = event.status === 'open';
 const canRegister = isOpen && (!isFull || event.waitlist_enabled);
 
 // JSON-LD Structured Data for Event
-const siteUrl = import.meta.env.PUBLIC_SITE_URL || 'https://happycoupleclass.com';
+const siteUrl = getServerEnv('PUBLIC_SITE_URL', import.meta.env.PUBLIC_SITE_URL || 'https://happycoupleclass.com');
 const eventJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Event',

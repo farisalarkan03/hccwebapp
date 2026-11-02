@@ -3,6 +3,7 @@ export const prerender = false;
 import type { APIRoute } from 'astro';
 import { createServiceClient } from '../../lib/supabase';
 import { normalizeWhatsApp } from '../../lib/schemas';
+import { getServerEnv } from '../../lib/server-env';
 
 export const POST: APIRoute = async ({ request }) => {
   try {
@@ -29,7 +30,7 @@ export const POST: APIRoute = async ({ request }) => {
     const cleanWa = normalizeWhatsApp(whatsapp);
 
     // 2. Validate Turnstile if configured
-    const turnstileSecret = import.meta.env.TURNSTILE_SECRET;
+    const turnstileSecret = getServerEnv('TURNSTILE_SECRET', import.meta.env.TURNSTILE_SECRET);
     if (turnstileSecret && turnstile_token) {
       try {
         const verifyRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {

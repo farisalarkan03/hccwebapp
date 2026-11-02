@@ -4,19 +4,20 @@ export const prerender = false;
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { extractCookieValue } from '../../lib/auth';
 import { verifyQrToken } from '../../lib/jwt';
+import { getServerEnv } from '../../lib/server-env';
 
 // If already authenticated, redirect to /qrclass/scan
 const cookieHeader = Astro.request.headers.get('cookie') ?? '';
 const qrToken = extractCookieValue(cookieHeader, 'qr-staff-token');
 if (qrToken) {
-  const jwtSecret = import.meta.env.QR_JWT_SECRET || 'default-secret-qr-key-123456789';
+  const jwtSecret = getServerEnv('QR_JWT_SECRET', import.meta.env.QR_JWT_SECRET || 'default-secret-qr-key-123456789');
   const payload = await verifyQrToken(qrToken, jwtSecret);
   if (payload && payload.event_id) {
     return Astro.redirect('/qrclass/scan');
   }
 }
 
-const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || '';
+const turnstileSiteKey = getServerEnv('PUBLIC_TURNSTILE_SITE_KEY', import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || '');
 ---
 
 <BaseLayout title="Login Pendata — QRClass HCC" noindex={true}>

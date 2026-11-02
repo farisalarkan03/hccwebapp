@@ -1,9 +1,11 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
-	"compatibility_date": "2026-10-23",
-	"compatibility_flags": ["global_fetch_strictly_public"],
-	"name": "bustling-belt",
+	"name": "hccwebapp",
 	"main": "@astrojs/cloudflare/entrypoints/server",
+	"compatibility_date": "2026-10-23",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
 	"assets": {
 		"directory": "./dist",
 		"binding": "ASSETS"

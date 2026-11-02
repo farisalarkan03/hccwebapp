@@ -19,8 +19,15 @@ pnpm-debug.log*
 !.env.example
 .env.production
 
+# wrangler / cloudflare secrets for local dev
+.dev.vars
+.dev.vars.*
+
 # wrangler / cloudflare
 .wrangler/
+
+# worker types (auto-generated)
+worker-configuration.d.ts
 
 # macOS-specific files
 .DS_Store

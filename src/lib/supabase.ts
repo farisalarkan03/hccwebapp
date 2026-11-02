@@ -1,21 +1,36 @@
 // Supabase client helpers
 import { createClient } from '@supabase/supabase-js';
+import { getServerEnv } from './server-env';
 
-const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key';
+export function getSupabaseUrl(): string {
+  return getServerEnv('PUBLIC_SUPABASE_URL', import.meta.env.PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co');
+}
 
-// Public (anon) client - for use in browser/components
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export function getSupabaseAnonKey(): string {
+  return getServerEnv('PUBLIC_SUPABASE_ANON_KEY', import.meta.env.PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key');
+}
+
+export function createAnonClient() {
+  return createClient(getSupabaseUrl(), getSupabaseAnonKey());
+}
+
+// Public (anon) client proxy for server rendering
+export const supabase = new Proxy({} as ReturnType<typeof createClient>, {
+  get(_target, prop) {
+    const client = createAnonClient();
+    const val = (client as any)[prop];
+    return typeof val === 'function' ? val.bind(client) : val;
+  }
+});
 
 // Server-side client factory using service role key
-// ONLY to be used in server-side code (Pages Functions, Astro server routes)
+// ONLY to be used in server-side code (Astro server routes, API endpoints)
 // NEVER expose SUPABASE_SERVICE_ROLE_KEY to the client
 export function createServiceClient() {
-  const serviceRoleKey =
-    import.meta.env.SUPABASE_SERVICE_ROLE_KEY ||
-    import.meta.env.PUBLIC_SUPABASE_ANON_KEY ||
-    'placeholder-anon-key';
-  return createClient(supabaseUrl, serviceRoleKey, {
+  const url = getSupabaseUrl();
+  const serviceRoleKey = getServerEnv('SUPABASE_SERVICE_ROLE_KEY') || getSupabaseAnonKey();
+
+  return createClient(url, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
