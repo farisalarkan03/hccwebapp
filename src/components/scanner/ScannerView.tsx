@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import jsQR from 'jsqr';
 import { Icon } from '../ui/Icon';
 import { ResultOverlay, type CheckinResult } from './ResultOverlay';
 
@@ -114,7 +115,7 @@ export function ScannerView({ eventId, staffName }: ScannerViewProps) {
     }
   };
 
-  // 3. Initialize Camera & BarcodeDetector loop
+  // 3. Initialize Camera & QR scanning loop (BarcodeDetector with jsQR fallback for iOS/Safari)
   useEffect(() => {
     let animFrame: number;
     let barcodeDetector: any = null;
@@ -129,58 +130,102 @@ export function ScannerView({ eventId, staffName }: ScannerViewProps) {
       }
     }
 
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
     const startCamera = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-          audio: false,
-        });
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          });
+        } catch (initialErr) {
+          // Fallback constraints for iOS devices where strict width/height may fail
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' },
+            audio: false,
+          });
+        }
 
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+          videoRef.current.setAttribute('playsinline', 'true');
+          videoRef.current.setAttribute('webkit-playsinline', 'true');
+          videoRef.current.muted = true;
+          try {
+            await videoRef.current.play();
+          } catch (playErr) {
+            console.warn('Auto play waiting for interaction:', playErr);
+          }
         }
 
         // Check torch support
         const track = stream.getVideoTracks()[0];
-        const capabilities: any = track.getCapabilities ? track.getCapabilities() : {};
+        const capabilities: any = track?.getCapabilities ? track.getCapabilities() : {};
         if (capabilities.torch) {
           setHasTorch(true);
         }
 
-        // Start scanning loop if BarcodeDetector is available
-        if (barcodeDetector) {
-          const scanLoop = async () => {
-            if (
-              videoRef.current &&
-              videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA &&
-              !isProcessingRef.current
-            ) {
-              try {
-                const barcodes = await barcodeDetector.detect(videoRef.current);
-                if (barcodes.length > 0) {
-                  const rawValue = barcodes[0].rawValue;
-                  if (rawValue) {
-                    processCheckin(rawValue);
+        // Start scanning loop (runs BarcodeDetector or jsQR)
+        let lastScanTime = 0;
+        const scanLoop = async (time: number) => {
+          if (
+            videoRef.current &&
+            videoRef.current.readyState >= videoRef.current.HAVE_CURRENT_DATA &&
+            !isProcessingRef.current
+          ) {
+            // Check frame every ~100ms for optimal battery and smooth decoding
+            if (time - lastScanTime >= 100) {
+              lastScanTime = time;
+
+              if (barcodeDetector) {
+                try {
+                  const barcodes = await barcodeDetector.detect(videoRef.current);
+                  if (barcodes.length > 0 && barcodes[0].rawValue) {
+                    processCheckin(barcodes[0].rawValue);
+                  }
+                } catch (err) {
+                  // Ignore frame detection glitch
+                }
+              } else if (ctx && videoRef.current.videoWidth > 0) {
+                // Fallback for iPhone / Safari / WebKit using jsQR
+                const vid = videoRef.current;
+                const maxDim = 640;
+                let w = vid.videoWidth;
+                let h = vid.videoHeight;
+                if (w > maxDim) {
+                  h = Math.floor(h * (maxDim / w));
+                  w = maxDim;
+                }
+                canvas.width = w;
+                canvas.height = h;
+                ctx.drawImage(vid, 0, 0, w, h);
+                const imgData = ctx.getImageData(0, 0, w, h);
+                if (imgData) {
+                  const code = jsQR(imgData.data, imgData.width, imgData.height, {
+                    inversionAttempts: 'dontInvert',
+                  });
+                  if (code && code.data) {
+                    processCheckin(code.data);
                   }
                 }
-              } catch (err) {
-                // Ignore detector frame error
               }
             }
-            animFrame = requestAnimationFrame(scanLoop);
-          };
+          }
           animFrame = requestAnimationFrame(scanLoop);
-        }
+        };
+        animFrame = requestAnimationFrame(scanLoop);
       } catch (err: any) {
         console.error('Camera error:', err);
         setCameraError(
-          'Tidak dapat mengakses kamera. Pastikan izin kamera telah diberikan atau gunakan isian manual di bawah.'
+          'Tidak dapat mengakses kamera. Pastikan izin kamera telah diberikan di pengaturan browser/iOS atau gunakan isian manual di bawah.'
         );
       }
     };
@@ -266,7 +311,7 @@ export function ScannerView({ eventId, staffName }: ScannerViewProps) {
 
       {/* 2. Camera View & Frame */}
       <div className="sv-camera-wrap">
-        <video ref={videoRef} playsInline muted className="sv-video" />
+        <video ref={videoRef} autoPlay playsInline muted className="sv-video" />
 
         {cameraError ? (
           <div className="sv-camera-error">
