@@ -123,3 +123,48 @@ export function slugify(text: string): string {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 }
+
+/**
+ * Convert a datetime-local input string (assumed to be WIB / UTC+7) to ISO string in UTC
+ * e.g. "2026-12-27T12:45" -> "2026-12-27T05:45:00.000Z"
+ */
+export function parseWIBInputToISO(datetimeLocalStr?: string | null): string | null {
+  if (!datetimeLocalStr) return null;
+  const trimmed = datetimeLocalStr.trim();
+  if (!trimmed) return null;
+  if (trimmed.includes('Z') || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    const d = new Date(trimmed);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  const wibString = trimmed.length === 16 ? `${trimmed}:00+07:00` : `${trimmed}+07:00`;
+  const d = new Date(wibString);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/**
+ * Format an ISO string to a datetime-local input string in WIB (Asia/Jakarta)
+ * e.g. "2026-12-27T05:45:00.000Z" -> "2026-12-27T12:45"
+ */
+export function toDateTimeLocalWIB(isoStr?: string | null): string {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return '';
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: WIB_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(d);
+  const getPart = (type: string) => parts.find((p) => p.type === type)?.value || '00';
+
+  let hour = getPart('hour');
+  if (hour === '24') hour = '00';
+
+  return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${hour}:${getPart('minute')}`;
+}

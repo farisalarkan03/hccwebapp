@@ -4,7 +4,7 @@ export const prerender = false;
 import { requireAdmin } from '../../../lib/auth';
 import AdminLayout from '../../../layouts/AdminLayout.astro';
 import { createServiceClient } from '../../../lib/supabase';
-import { slugify } from '../../../lib/format';
+import { slugify, parseWIBInputToISO } from '../../../lib/format';
 
 const authResult = await requireAdmin(Astro);
 if (authResult instanceof Response) return authResult;
@@ -48,8 +48,8 @@ if (Astro.request.method === 'POST') {
         title,
         slug,
         category_id: categoryId,
-        date_start: new Date(dateStart).toISOString(),
-        date_end: dateEnd ? new Date(dateEnd).toISOString() : null,
+        date_start: parseWIBInputToISO(dateStart)!,
+        date_end: parseWIBInputToISO(dateEnd),
         location,
         location_map_url: locationMapUrl,
         price_per_couple: pricePerCouple,
