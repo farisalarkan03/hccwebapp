@@ -17,7 +17,7 @@ const { data: event, error: eventError } = await supabase
   .select(`
     *,
     categories (id, name),
-    registrations (id, payment_status)
+    registrations (id, payment_status, deleted_at)
   `)
   .eq('slug', slug)
   .is('deleted_at', null)
@@ -28,7 +28,7 @@ if (eventError || !event) {
 }
 
 // Calculate quota
-const regs = (event.registrations || []).filter((r: any) => !['expired', 'cancelled'].includes(r.payment_status));
+const regs = (event.registrations || []).filter((r: any) => !['expired', 'cancelled'].includes(r.payment_status) && !r.deleted_at);
 const currentCount = regs.length;
 const isFull = event.quota ? currentCount >= event.quota : false;
 const remainingQuota = event.quota ? Math.max(0, event.quota - currentCount) : null;

@@ -2,13 +2,15 @@
 export const prerender = false;
 
 import PublicLayout from '../../layouts/PublicLayout.astro';
-import { supabase } from '../../lib/supabase';
+import { createServiceClient } from '../../lib/supabase';
 import { formatDateWIB, formatRupiah } from '../../lib/format';
 
 let events: any[] = [];
 let categories: any[] = [];
 
 try {
+  const supabase = createServiceClient();
+
   const { data: catList } = await supabase
     .from('categories')
     .select('id, name')
@@ -31,7 +33,7 @@ try {
       status,
       waitlist_enabled,
       categories (id, name),
-      registrations (id, payment_status)
+      registrations (id, payment_status, deleted_at)
     `)
     .is('deleted_at', null)
     .in('status', ['open', 'closed'])
@@ -45,7 +47,7 @@ try {
 // Compute quota info per event
 const eventsWithQuota = events.map((ev) => {
   const regs = (ev.registrations || []).filter(
-    (r: any) => !['expired', 'cancelled'].includes(r.payment_status)
+    (r: any) => !['expired', 'cancelled'].includes(r.payment_status) && !r.deleted_at
   );
   const count = regs.length;
   const isFull = ev.quota ? count >= ev.quota : false;

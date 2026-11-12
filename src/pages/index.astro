@@ -2,7 +2,7 @@
 export const prerender = false;
 
 import PublicLayout from '../layouts/PublicLayout.astro';
-import { supabase } from '../lib/supabase';
+import { supabase, createServiceClient } from '../lib/supabase';
 import { formatDateWIB, formatRupiah } from '../lib/format';
 
 let settingsMap: Record<string, any> = {};
@@ -13,9 +13,11 @@ try {
   const { data: settingsList } = await supabase.from('site_settings').select('*');
   settingsList?.forEach((s) => { settingsMap[s.key] = s.value; });
 
-  const { data: eventsList } = await supabase
+  // Use service client to bypass RLS for registrations count
+  const serviceSupabase = createServiceClient();
+  const { data: eventsList } = await serviceSupabase
     .from('events')
-    .select(`id, title, slug, description, flyer_url, date_start, location, price_per_couple, quota, status, waitlist_enabled, categories (name), registrations (id, payment_status)`)
+    .select(`id, title, slug, description, flyer_url, date_start, location, price_per_couple, quota, status, waitlist_enabled, categories (name), registrations (id, payment_status, deleted_at)`)
     .eq('status', 'open')
     .eq('show_on_landing', true)
     .is('deleted_at', null)
@@ -24,7 +26,7 @@ try {
 
   if (eventsList && eventsList.length > 0) activeEvents = eventsList.map((ev: any) => {
     const regs = (ev.registrations || []).filter(
-      (r: any) => !['expired', 'cancelled'].includes(r.payment_status)
+      (r: any) => !['expired', 'cancelled'].includes(r.payment_status) && !r.deleted_at
     );
     const count = regs.length;
     const isFull = ev.quota ? count >= ev.quota : false;
