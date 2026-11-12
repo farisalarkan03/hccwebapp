@@ -15,14 +15,23 @@ try {
 
   const { data: eventsList } = await supabase
     .from('events')
-    .select(`id, title, slug, description, flyer_url, date_start, location, price_per_couple, quota, status, categories (name)`)
+    .select(`id, title, slug, description, flyer_url, date_start, location, price_per_couple, quota, status, waitlist_enabled, categories (name), registrations (id, payment_status)`)
     .eq('status', 'open')
     .eq('show_on_landing', true)
     .is('deleted_at', null)
     .order('date_start', { ascending: true })
     .limit(3);
 
-  if (eventsList && eventsList.length > 0) activeEvents = eventsList;
+  if (eventsList && eventsList.length > 0) activeEvents = eventsList.map((ev: any) => {
+    const regs = (ev.registrations || []).filter(
+      (r: any) => !['expired', 'cancelled'].includes(r.payment_status)
+    );
+    const count = regs.length;
+    const isFull = ev.quota ? count >= ev.quota : false;
+    const remaining = ev.quota ? Math.max(0, ev.quota - count) : null;
+    const canRegister = ev.status === 'open' && (!isFull || ev.waitlist_enabled);
+    return { ...ev, isFull, remaining, canRegister };
+  });
 
   // Fetch published pages to show as blog/inspiration
   const { data: pages } = await supabase
@@ -347,6 +356,16 @@ function getMonthShort(dateStr: string) {
                     <span class="material-symbols-outlined meta-icon" aria-hidden="true">location_on</span>
                     <span>{ev.location}</span>
                   </div>
+                  {ev.quota && (
+                    <div class="poster-meta-item">
+                      <span class="material-symbols-outlined meta-icon" aria-hidden="true">group</span>
+                      <span class={ev.isFull ? 'meta-quota-full' : 'meta-quota-ok'}>
+                        {ev.isFull
+                          ? (ev.waitlist_enabled ? 'Kuota penuh — waitlist tersedia' : 'Kuota penuh')
+                          : `${ev.remaining} dari ${ev.quota} kuota tersisa`}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div class="poster-card-footer">
@@ -1030,6 +1049,16 @@ function getMonthShort(dateStr: string) {
     font-size: 18px;
     color: var(--pink-600);
     flex-shrink: 0;
+  }
+
+  .meta-quota-ok {
+    color: #15803d;
+    font-weight: 500;
+  }
+
+  .meta-quota-full {
+    color: #92400e;
+    font-weight: 500;
   }
 
   .poster-card-footer {
