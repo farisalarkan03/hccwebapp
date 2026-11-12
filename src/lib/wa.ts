@@ -12,7 +12,12 @@ export function buildWaLink(
   vars: Record<string, string> = {}
 ): string {
   // Normalize number: strip spaces, dashes, + signs
-  const normalized = number.replace(/[\s+\-()]/g, '');
+  let normalized = number.replace(/[\s+\-()]/g, '');
+  if (normalized.startsWith('0')) {
+    normalized = '62' + normalized.slice(1);
+  } else if (!normalized.startsWith('62') && normalized.length > 0) {
+    normalized = '62' + normalized;
+  }
 
   // Fill in template variables
   let message = template;
@@ -33,4 +38,7 @@ export const WA_TEMPLATES = {
 
   toUser: (eventName: string, regCode: string, ticketUrl: string): string =>
     `Assalamualaikum, pembayaran pendaftaran HCC *${eventName}* (kode *${regCode}*) sudah kami konfirmasi. Berikut link tiket Anda: ${ticketUrl}`,
+
+  reminderPayment: (eventName: string, regCode: string, husbandName: string, wifeName: string): string =>
+    `Assalamualaikum Wr. Wb. Halo Bapak/Ibu ${husbandName} & ${wifeName},\n\nKami dari panitia ${eventName} ingin menanyakan terkait pendaftaran dengan kode registrasi *${regCode}*.\n\nApakah sudah melakukan pembayaran? Jika sudah, mohon konfirmasi dengan mengirimkan bukti transfernya agar dapat segera kami verifikasi dan kami kirimkan e-tiketnya.\n\nTerima kasih. 🙏`,
 } as const;

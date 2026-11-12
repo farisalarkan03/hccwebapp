@@ -48,6 +48,8 @@ if (Astro.request.method === 'POST') {
         title,
         slug,
         category_id: categoryId,
+        date_start: new Date(dateStart).toISOString(),
+        date_end: dateEnd ? new Date(dateEnd).toISOString() : null,
         date_start: parseWIBInputToISO(dateStart)!,
         date_end: parseWIBInputToISO(dateEnd),
         location,

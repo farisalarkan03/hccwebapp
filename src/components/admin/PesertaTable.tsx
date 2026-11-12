@@ -52,6 +52,10 @@ export function PesertaTable({
   const [confirmNote, setConfirmNote] = useState('');
   const [loadingConfirm, setLoadingConfirm] = useState(false);
 
+  // Delete participant modal state
+  const [deletingItem, setDeletingItem] = useState<ParticipantItem | null>(null);
+  const [loadingDelete, setLoadingDelete] = useState(false);
+
   // Status numbers
   const total = participants.length;
   const pending = participants.filter((p) => p.payment_status === 'pending').length;
@@ -141,7 +145,37 @@ export function PesertaTable({
     }
   };
 
-  // Build WhatsApp Link to User
+  // Execute delete participant
+  const handleDeleteParticipant = async () => {
+    if (!deletingItem) return;
+    setLoadingDelete(true);
+
+    try {
+      const res = await fetch('/api/admin/registrations/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: deletingItem.id }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Gagal menghapus data peserta.');
+
+      // Update state
+      setParticipants((prev) => prev.filter((item) => item.id !== deletingItem.id));
+
+      if (selectedItem?.id === deletingItem.id) {
+        setSelectedItem(null);
+      }
+
+      setDeletingItem(null);
+    } catch (err: any) {
+      alert(err.message || 'Terjadi kesalahan sistem saat menghapus peserta.');
+    } finally {
+      setLoadingDelete(false);
+    }
+  };
+
+  // Build WhatsApp Link to User (Ticket Confirmation)
   const getWaLinkToUser = (item: ParticipantItem) => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://happycoupleclass.com';
     const ticketUrl = `${origin}/tiket/${item.ticket_token}`;
@@ -151,6 +185,19 @@ export function PesertaTable({
       wife: item.wife_name,
       reg_code: item.reg_code,
       ticket_link: ticketUrl,
+    });
+  };
+
+  // Build WhatsApp Reminder Link (Payment Follow-up)
+  const getWaReminderLink = (item: ParticipantItem) => {
+    const reminderTemplate =
+      'Assalamualaikum Wr. Wb. Halo Bapak/Ibu {husband} & {wife},\n\nKami dari panitia {event} ingin mengonfirmasi terkait pendaftaran Anda dengan kode registrasi *{reg_code}*.\n\nApakah Anda sudah melakukan pembayaran? Jika sudah, mohon berkenan mengirimkan bukti transfernya melalui pesan ini agar dapat segera kami verifikasi dan kami kirimkan e-tiket kedatangan Anda.\n\nTerima kasih banyak atas perhatiannya. 🙏';
+
+    return buildWaLink(item.whatsapp, reminderTemplate, {
+      event: eventTitle,
+      husband: item.husband_name,
+      wife: item.wife_name,
+      reg_code: item.reg_code,
     });
   };
 
@@ -330,6 +377,19 @@ export function PesertaTable({
                           </button>
                         )}
 
+                        {item.payment_status !== 'paid' && (
+                          <a
+                            href={getWaReminderLink(item)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-secondary btn-sm pt-btn-remind"
+                            title="Ingatkan Pembayaran via WhatsApp"
+                          >
+                            <Icon name="chat" size={16} aria-hidden />
+                            Ingatkan
+                          </a>
+                        )}
+
                         {item.payment_status === 'paid' && (
                           <a
                             href={getWaLinkToUser(item)}
@@ -359,6 +419,15 @@ export function PesertaTable({
                           title="Lihat Detail Jawaban Form"
                         >
                           <Icon name="visibility" size={16} aria-hidden />
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn-icon btn-icon-danger"
+                          onClick={() => setDeletingItem(item)}
+                          title="Hapus Data Peserta"
+                        >
+                          <Icon name="delete" size={16} aria-hidden />
                         </button>
                       </div>
                     </td>
@@ -424,6 +493,18 @@ export function PesertaTable({
                     Konfirmasi Pembayaran Selesai
                   </button>
                 )}
+                {selectedItem.payment_status !== 'paid' && (
+                  <a
+                    href={getWaReminderLink(selectedItem)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-secondary btn-sm pt-btn-remind"
+                    title="Ingatkan Pembayaran via WhatsApp"
+                  >
+                    <Icon name="chat" size={18} aria-hidden />
+                    Ingatkan Bayar via WA
+                  </a>
+                )}
                 {selectedItem.payment_status === 'paid' && (
                   <a
                     href={getWaLinkToUser(selectedItem)}
@@ -442,6 +523,14 @@ export function PesertaTable({
                 >
                   <Icon name="link" size={18} aria-hidden />
                   Salin Tautan Tiket
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm pt-btn-delete"
+                  onClick={() => setDeletingItem(selectedItem)}
+                >
+                  <Icon name="delete" size={18} aria-hidden />
+                  Hapus Peserta
                 </button>
               </div>
 
@@ -528,6 +617,61 @@ export function PesertaTable({
                 disabled={loadingConfirm}
               >
                 {loadingConfirm ? 'Menyimpan...' : 'Ya, Pembayaran Lunas'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE PARTICIPANT MODAL */}
+      {deletingItem && (
+        <div className="modal-backdrop" onClick={() => !loadingDelete && setDeletingItem(null)}>
+          <div className="pt-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title" style={{ color: 'var(--danger)' }}>Hapus Data Peserta</h3>
+              <button
+                type="button"
+                className="modal-close-btn"
+                onClick={() => !loadingDelete && setDeletingItem(null)}
+                aria-label="Batal"
+                disabled={loadingDelete}
+              >
+                <Icon name="close" size={20} aria-hidden />
+              </button>
+            </div>
+            <div className="modal-body">
+              <p className="pt-confirm-text">
+                Apakah Anda yakin ingin menghapus data pendaftaran peserta berikut?
+              </p>
+              <div className="pt-confirm-couple-box" style={{ background: '#FFF5F5', borderColor: '#FECACA' }}>
+                <span className="pt-reg-code">{deletingItem.reg_code}</span>
+                <div>
+                  <strong>{deletingItem.husband_name}</strong> &amp; <strong>{deletingItem.wife_name}</strong>
+                  <div style={{ fontSize: '12px', color: 'var(--ink-500)', marginTop: '2px' }}>
+                    WA: {deletingItem.whatsapp} • Status: {badgeText(deletingItem.payment_status)}
+                  </div>
+                </div>
+              </div>
+              <p style={{ fontSize: '12px', color: 'var(--danger)', marginTop: '12px', marginBottom: 0 }}>
+                ⚠️ Pendaftaran ini akan dihapus dari sistem dan kuota acara akan dikembalikan.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setDeletingItem(null)}
+                disabled={loadingDelete}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={handleDeleteParticipant}
+                disabled={loadingDelete}
+              >
+                {loadingDelete ? 'Menghapus...' : 'Ya, Hapus Peserta'}
               </button>
             </div>
           </div>
@@ -718,6 +862,39 @@ export function PesertaTable({
         .pt-btn-wa:hover {
           background: #EAF8EE;
           color: #1F9D4D;
+        }
+
+        .pt-btn-remind {
+          gap: 4px;
+          color: #128C7E;
+          border-color: #B2DFDB;
+          background: #F0FDF4;
+        }
+
+        .pt-btn-remind:hover {
+          background: #DCFCE7;
+          color: #075E54;
+          border-color: #86EFAC;
+        }
+
+        .btn-icon-danger {
+          color: var(--ink-400);
+        }
+
+        .btn-icon-danger:hover {
+          color: var(--danger);
+          background: #FEE2E2;
+        }
+
+        .pt-btn-delete {
+          color: var(--danger);
+          border-color: #FECACA;
+        }
+
+        .pt-btn-delete:hover {
+          background: #FEE2E2;
+          color: #991B1B;
+          border-color: #F87171;
         }
 
         /* Detail Modal */
